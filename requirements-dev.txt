@@ -1,0 +1,4 @@
+# Development tools only. Disk Map itself uses the Python standard library.
+pre-commit==4.7.0
+vermin==1.9.2
+playwright==1.65.2

@@ -1,0 +1,30 @@
+# Install: pip install -r requirements-dev.txt && pre-commit install
+# CI runs this same file on every push and pull request.
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit]
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: check-json
+  - repo: local
+    hooks:
+      - id: check-private
+        name: personal data (emails, home paths, network addresses, private terms)
+        entry: python3 tools/check_private.py
+        language: system
+        types: [text]
+      - id: check-private-message
+        name: personal data in the commit message
+        entry: python3 tools/check_private.py
+        language: system
+        stages: [commit-msg]
