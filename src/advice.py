@@ -96,7 +96,8 @@ _BROWSER = Rule(LV_CAUTION, 'Browser profile',
 _LANG_VERSIONS = Rule(LV_REVIEW, 'Installed language versions or environments',
                       'Each version or environment can be hundreds of MB to several GB. Unused '
                       'ones can be removed and reinstalled later.',
-                      ['Remove old versions with the tool that installed them (pyenv, nvm, conda, uv, rustup and so on) rather than deleting folders by hand.'])
+                      ['Remove old versions with the tool that installed them (pyenv, nvm, conda, uv, rustup and so on) rather than deleting folders by hand.'],
+                      strong=True)
 
 _DEVICE_SUPPORT = Rule(LV_SAFE, 'Xcode device support files',
                        'Debug symbols copied from devices you have connected. Xcode copies them '
@@ -575,6 +576,23 @@ def norm_path(p):
 
 
 _rule_cache = {}
+_STRICTNESS = {LV_SAFE: 0, LV_REVIEW: 1, LV_CAUTION: 2, LV_KEEP: 3}
+
+
+def _governing_ancestor(np, real, system):
+    """Nearest strong path or package rule above np, as (rule, real_path), or None."""
+    while np not in ('/', '~', '') and '/' in np:
+        np = np.rsplit('/', 1)[0] or '/'
+        real = os.path.dirname(real) or '/'
+        r = PATH_RULES.get(np)
+        if r is None and not system:
+            base = np.rsplit('/', 1)[-1]
+            dot = base.rfind('.')
+            if dot > 0:
+                r = PKG_RULES.get(base[dot:].lower())
+        if r is not None and r.strong and r.lv in _STRICTNESS:
+            return r, real
+    return None
 
 
 def _dir_rule(path):
@@ -588,11 +606,13 @@ def _dir_rule(path):
     res = None
     while True:
         r = None
+        by_name = False
         if first:
             r = SELF_RULES.get(cur_np)
         if r is None:
             r = PATH_RULES.get(cur_np)
         if r is None and not system:
+            by_name = True
             base = cur_np.rsplit('/', 1)[-1]
             r = NAME_RULES.get(base)
             if r is not None and r.cond is not None and not r.cond(cur_np, cur_real):
@@ -605,6 +625,16 @@ def _dir_rule(path):
                 r = _DOT_RULE
         if r is not None:
             res = (r, cur_real, first)
+            if by_name:
+                # A name or package match is a guess from the folder name alone. It must not
+                # loosen a strong rule above it (node_modules inside an app, a "Cache" folder in
+                # iCloud Drive), and inside a strong safe area such as Caches the area's rule is
+                # the better description than a package type.
+                anc = _governing_ancestor(cur_np, cur_real, system)
+                if anc is not None and r.lv in _STRICTNESS and (
+                        _STRICTNESS[anc[0].lv] > _STRICTNESS[r.lv]
+                        or (anc[0].lv == LV_SAFE and r in PKG_RULES.values())):
+                    res = (anc[0], anc[1], False)
             break
         if cur_np in ('/', '~', '') or '/' not in cur_np:
             break

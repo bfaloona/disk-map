@@ -158,41 +158,33 @@ class NameRulesTest(AdviceCase):
         self.check('/usr/local/lib/node_modules', True, dm.LV_CAUTION, 'Manually installed tools')
         self.check('/private/var/folders/ab/xyz/T/node_modules', True, dm.LV_CAUTION, 'Temporary files')
 
-    @unittest.expectedFailure
     def test_node_modules_inside_an_app_is_not_safe(self):
         # Electron apps ship their own node_modules; deleting it breaks the app.
-        # The nearest rule wins, so the name rule overrides the strong ".app" package rule.
         r, _a, _d = self.rule('/Applications/Some.app/Contents/Resources/app/node_modules', True)
         self.assertNotEqual(r.lv, dm.LV_SAFE)
 
-    @unittest.expectedFailure
     def test_global_homebrew_node_modules_is_not_safe(self):
         # Packages installed with `npm -g` under Homebrew are tools, not a project's re-creatable install.
         r, _a, _d = self.rule('/opt/homebrew/lib/node_modules', True)
         self.assertNotEqual(r.lv, dm.LV_SAFE)
 
-    @unittest.expectedFailure
     def test_cache_named_folder_in_icloud_is_not_safe(self):
         # A user folder called "Cache" in iCloud Drive syncs: deleting it deletes it everywhere.
         r, _a, _d = self.rule(H + '/Library/Mobile Documents/com~apple~CloudDocs/Cache', True)
         self.assertNotEqual(r.lv, dm.LV_SAFE)
 
-    @unittest.expectedFailure
     def test_global_nvm_node_modules_is_not_safe(self):
         # Global packages for one Node version are installed tools, not a project's re-creatable install.
         r, _a, _d = self.rule(H + '/.nvm/versions/node/v20.0.0/lib/node_modules', True)
         self.assertNotEqual(r.lv, dm.LV_SAFE)
 
-    @unittest.expectedFailure
     def test_cache_named_folder_in_messages_is_not_safe(self):
-        # ~/Library/Messages is a strong "careful" rule; a cache-named folder inside it outranks it.
+        # ~/Library/Messages is a strong "careful" rule; a cache-named folder inside it must not loosen it.
         r, _a, _d = self.rule(H + '/Library/Messages/Attachments/Caches', True)
         self.assertNotEqual(r.lv, dm.LV_SAFE)
 
-    @unittest.expectedFailure
     def test_cache_folder_named_like_an_app_is_still_a_cache(self):
-        # Bundle-ID folder names can end in ".app"; the package rule then outranks ~/Library/Caches.
-        # The error is on the cautious side (Your call instead of Safe to clear).
+        # Bundle-ID folder names can end in ".app"; inside ~/Library/Caches it is still a cache.
         self.check(H + '/Library/Caches/com.example.app', True, dm.LV_SAFE, 'App caches')
 
 
