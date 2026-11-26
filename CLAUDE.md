@@ -40,7 +40,8 @@ Scanner requests are the same in every mode: `status`, `tree`, `info`, `scan` (p
 
 ## The artifact
 
-- Slug `REDACTED`, title "Disk Map", private to the owner.
+- Slug `REDACTED` (link https://claude.ai/artifact/REDACTED),
+  title "Disk Map", private to the owner. Version 3 (2026-11-26) was built from commit 3d8540e.
 - Published from `dist/app/index.html` with the artifacts `publish_files` tool (pass the slug and the
   current version as `base_version`). It declares `capabilities: {desktop: {}}`; the page's manifest tag
   asks for `full-access` only. A newer published version makes the app ask for full access again.
