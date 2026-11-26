@@ -174,7 +174,7 @@ class Job(object):
         self.on_done = on_done
         self.special = special
         self.container = container
-        self.seen = set()       # device+inode of hard-linked files already counted
+        self.seen = {}          # device+inode of hard-linked files already counted -> folder that counted it
         self.limit = limit      # bytes used in the whole container, for sanity checks
 
 
@@ -190,6 +190,7 @@ class Root(object):
         self.from_cache = False
         self.job = None
         self.limit = 0
+        self.links = {}             # the full scan's hard-link record (Job.seen); empty after a cache load
 
 
 def scandir_nofollow(path):
@@ -391,6 +392,7 @@ class Scanner(object):
             sp = vol_space(path, container_level=True) if path in self.mounts else None
             r.limit = job.limit = sp[1] if sp else 0
             r.job = job
+            r.links = job.seen
             self.roots[path] = r
             self.gen += 1
         self.pool.submit(self._run, job, r.node, path, 0)
@@ -438,13 +440,31 @@ class Scanner(object):
                     delta = (-cur.size, -cur.files, -cur.dirs - 1)
                 parent.children = ch
                 self._apply_delta(parent, delta, new.mtime)
+                self._merge_links(r, path, job.seen if path in ch else {})
                 self.sub_jobs.pop(path, None)
                 self.gen += 1
             threading.Thread(target=self.save_cache, args=(r,), daemon=True).start()
 
         job = Job(new, path, PRUNE_BYTES, done, self._special_for(r.path), self._container_of(path), r.limit)
+        job.seen = self._links_outside(r, path)
         self.pool.submit(self._run, job, new, path, 1)
         return 'ok'
+
+    @staticmethod
+    def _links_outside(r, path):
+        """Hard links counted by folders outside path. A rescan of path starts from these, so a
+        file whose other link lives elsewhere is not counted twice, and one counted inside path
+        is counted again."""
+        pre = path.rstrip('/') + '/'
+        return {k: v for k, v in list(r.links.items()) if v != path and not v.startswith(pre)}
+
+    def _merge_links(self, r, path, seen):
+        pre = path.rstrip('/') + '/'
+        links = self._links_outside(r, path)
+        for k, v in seen.items():
+            if v == path or v.startswith(pre):
+                links[k] = v
+        r.links = links
 
     @staticmethod
     def _apply_delta(node, delta, mtime=0):
@@ -552,7 +572,7 @@ class Scanner(object):
                             if key in seen:
                                 b = 0
                             else:
-                                seen.add(key)
+                                seen[key] = path
                         fsize += b
                         fcount += 1
                         mt = int(st.st_mtime)
@@ -628,8 +648,10 @@ class Scanner(object):
             return
         tmp = Node(node.name, None)
         job = Job(tmp, path, 0, None, self._special_for(r.path), self._container_of(path), r.limit)
+        job.seen = self._links_outside(r, path)
         self._scan_seq(job, tmp, path)
         with self.lock:
+            self._merge_links(r, path, job.seen)
             for c in (tmp.children or {}).values():
                 c.parent = node
             delta = (tmp.size - node.size, tmp.files - node.files, tmp.dirs - node.dirs)

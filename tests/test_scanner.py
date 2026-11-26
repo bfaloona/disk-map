@@ -198,10 +198,8 @@ class SizeTest(ScannerCase):
         notes = ' '.join(sc.info(self.root + '/b/f.bin')['notes'])
         self.assertIn('3 hard links', notes)
 
-    @unittest.expectedFailure
     def test_rescan_keeps_hard_links_counted_once(self):
-        # A rescan starts a new set of seen inodes, so a link whose twin lives outside the
-        # rescanned folder is counted a second time and the parent totals grow.
+        # A link whose twin lives outside the rescanned folder must not be counted again.
         write(self.root + '/a/f.bin', 256 * KB)
         os.makedirs(self.root + '/b')
         os.link(self.root + '/a/f.bin', self.root + '/b/f.bin')
@@ -210,6 +208,10 @@ class SizeTest(ScannerCase):
         ch = r.node.children
         uncounted = 'a' if ch['a'].size < ch['b'].size else 'b'
         self.assertEqual(sc.rescan_subtree(self.root + '/' + uncounted), 'ok')
+        self.wait(lambda: not sc.sub_jobs)
+        self.assertEqual(r.node.size, before)
+        counted = 'b' if uncounted == 'a' else 'a'
+        self.assertEqual(sc.rescan_subtree(self.root + '/' + counted), 'ok')
         self.wait(lambda: not sc.sub_jobs)
         self.assertEqual(r.node.size, before)
 
