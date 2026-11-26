@@ -1,6 +1,6 @@
 # Disk Map: cross-platform plan, Windows proof of concept first
 
-Status: ready to implement (proof of concept, section 3); sections 4 to 9 stay a draft
+Status: ready to implement (proof of concept, section 3); sections 4 to 11 stay a draft
 Date: 2026-11-26 (revised the same day)
 Scope: make the scanner and advice work on Windows, ship per-platform executables later, and keep a path open to iOS and Android. Section 3 is the part to build now.
 
@@ -12,7 +12,7 @@ Scope: make the scanner and advice work on Windows, ship per-platform executable
 |---|---|---|
 | 2026-11-26 | drafted | First draft: platform layer, packaging options, mobile |
 | 2026-11-26 | revised | Maintainer decisions recorded (section 2). Proof of concept section added. Documentation facts filled in with sources. Line numbers replaced by function names |
-| 2026-11-26 | reviewed | Self-review by the drafting agent: code references checked against `src/` at 2627bf0, copy-review scanner pass. The maintainer has not reviewed it yet |
+| 2026-11-26 | reviewed | Self-review by the drafting agent: code references checked against `src/` at 2627bf0, a second-model review (fixes: `ok_name` scope, probe trigger, baseline method, recall-bit overlap, link storage, cross-references), a full read, and the copy-review scanner. The copy-review wording reviewer did not run. The maintainer has not reviewed it yet |
 
 ## Status
 
@@ -50,13 +50,13 @@ Proof of concept checklist (section 3.6). Tick each step when its "done when" ho
 | Q11 | Must the real-Mac baseline (M0) finish first? | No. M0 runs in parallel. The identical-output checks in S9 guard macOS and Linux behavior |
 | PoC scope | How far the proof of concept goes | Run from source in HTTP mode. Section 3.2 lists what waits until later |
 
-Still open: Q2 to Q6 and Q9 in section 9. None of them blocks the proof of concept.
+Still open: Q2 to Q6, Q9, Q12 and Q13 in section 11. None of them blocks the proof of concept.
 
 ## 3. Proof of concept: Windows from source
 
 ### 3.1 Goal
 
-On a hosted Windows runner, `python dist/diskmap.py --no-browser C:/` scans the system drive. The page and API work through the same token flow as on macOS. The scan never enters a junction, a symbolic link or a network location. A script asserts all of this and fails the job when one check fails.
+On a hosted Windows runner, `python dist/diskmap.py --no-browser` starts, and a scan of `C:/` requested through the API finishes. The page and API work through the same token flow as on macOS. The scan never enters a junction, a symbolic link or a network location. A script asserts all of this and fails the job when one check fails.
 
 ### 3.2 Out of scope
 
@@ -71,7 +71,7 @@ On a hosted Windows runner, `python dist/diskmap.py --no-browser C:/` scans the 
 | Hard-link deduplication | Deferred. `DirEntry.stat()` gives `st_nlink` 0 on Windows, so hard links are counted once per link. S10 records the overcount |
 | Cloud placeholders (OneDrive) | A folder or file with a recall attribute is treated as cloud-only and never listed (S5). Whether a normal process sees those attributes needs a real machine (3.5) |
 | Paths over 260 characters on machines without `LongPathsEnabled` | Deferred. The runners set it to 1 ([Configure-BaseImage.ps1](https://github.com/actions/runner-images/blob/main/images/windows/scripts/build/Configure-BaseImage.ps1)) |
-| Packaging, signing, installer | Sections 4 and 5, after the proof of concept |
+| Packaging, signing, installer | Sections 6 and 7, after the proof of concept |
 
 ### 3.3 Runners
 
@@ -113,7 +113,7 @@ Facts about both runners that change the tests:
 | Answered by | Items |
 |---|---|
 | Documentation (3.4) | `st_blocks`, `DirEntry.stat` fields, junction detection, `normpath`, `statvfs`, `fcntl`, drive types, attribute values, long-path setting, file name characters |
-| The S1 probe on the runners | Junction and symlink behavior seen by `DirEntry`, `st_reparse_tag` values, `GetCompressedFileSizeW` against cluster-rounded size on `C:`, file count and scan time of `C:`, hard links and junctions on ReFS `D:`, whether a second socket can bind a port already in use (S7), `open_private` and `os.replace` round trip, where `TMP` points |
+| The S1 probe on the runners | Junction and symlink behavior seen by `DirEntry`, `st_reparse_tag` values, `GetCompressedFileSizeW` against cluster-rounded size on `C:`, file count and scan time of `C:`, hard links and junctions on ReFS `D:`, whether a second socket can bind a port already in use (S7), `open_private` and `os.replace` round trip, where `TMP` points, how many entries carry a recall or offline bit with no OneDrive present |
 | A real Windows 11 PC as a normal user (deferred to M2b) | OneDrive placeholders and whether listing downloads anything, a disconnected mapped drive and whether `GetDriveTypeW` blocks, "access denied" as a standard user, Explorer's "Size on disk", SmartScreen and antivirus, `explorer.exe /select,` quoting |
 
 ### 3.6 Steps
@@ -124,7 +124,7 @@ Code stays in `src/core.py` in a new "Platform" section near the top. A separate
 
 #### S1. Probe workflow on both Windows runners
 
-Add `.github/workflows/windows-probe.yml`, started by `workflow_dispatch` only, with a matrix over the two runners in 3.3. It runs `tools/windows_probe.py` (standard library) and uploads its JSON output as an artifact. The probe does not import Disk Map.
+Add `.github/workflows/windows-probe.yml`. Trigger it on `pull_request` with a `paths` filter on the workflow file and `tools/windows_probe.py`. A `workflow_dispatch` trigger alone does not work here, because GitHub runs a dispatched workflow only when the file is on the default branch ([workflow_dispatch](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_dispatch)). The matrix covers the runners in 3.3 with every Python version listed there (3.8.10 matters: S5 depends on `st_reparse_tag`, added in 3.8). It runs `tools/windows_probe.py` (standard library) and uploads its JSON output as an artifact. The probe does not import Disk Map.
 
 The probe records:
 
@@ -135,6 +135,7 @@ The probe records:
 5. A walk of `C:/` with `os.scandir` that never enters a reparse point: file count, folder count, sum of cluster-rounded sizes, count of entries whose `GetCompressedFileSizeW` differs from that rounding (sampled under `C:/Windows`), time taken, and `shutil.disk_usage('C:/')`.
 6. Port binding: bind a `socketserver.TCPServer` on `127.0.0.1:8765`, then try a second one on the same port. Record whether the second bind succeeds.
 7. Create a file with `os.open(..., O_CREAT | O_EXCL, 0o600)`, write it, `os.replace` it over an existing file while a reader holds it open, and record the outcome.
+8. During the walk in item 5, count entries on `C:` with RECALL_ON_DATA_ACCESS, RECALL_ON_OPEN or OFFLINE set, once from `DirEntry.stat(follow_symlinks=False)` and once from `os.lstat` on a sample. RECALL_ON_OPEN has the same value (`0x40000`) as FILE_ATTRIBUTE_EA, so a file with extended attributes may look like a cloud file. The runners have no OneDrive, so any nonzero count means the S5 cloud rule would skip real folders. Record example paths.
 
 Done when: the workflow runs green on both runners and its JSON is attached to the run. Copy the answers into 3.4 (with the run link) before S4 starts. The probe workflow and script are deleted at S10.
 
@@ -158,7 +159,7 @@ Today three places check `startswith('/')` and call `clean_path`: `Handler._path
   - macOS and Linux: today's rule (starts with `/`, no NUL, then `clean_path`).
   - Windows: must match `^[A-Za-z]:/`, no NUL, no `\`, then `ipath.normpath`, and the result must still start with the drive. Rejects `//server/share` and every UNC form.
 - Call it from the three places.
-- `ok_name`: also reject `\` and `:` on every platform. A cache file is data and may come from another machine later (section 6).
+- `ok_name`: on Windows, also reject `\` and `:`. Keep today's rule on macOS and Linux, where both characters are legal in names (man pages such as `Foo::Bar.3pm`) and one rejected name discards the whole cache in `load_caches`.
 
 Done when: unit tests cover each accepted and rejected form on both platform values, including `C:/../..`, `c:/x` (normalized to `C:/x`), `//host/share`, `\\host\share`, `C:` with no slash, and `/` on Windows.
 
@@ -175,7 +176,7 @@ Done when: unit tests cover each accepted and rejected form on both platform val
 - `start_scan`: the refusal when the mount table is empty applies on Windows too, because the network rule depends on it.
 - `_mac_root_name` becomes `root_name()` in the platform section, with the Windows branch returning the system drive's display name.
 
-Done when: on both runners, `GET /api/tree?path=` lists `C:` (and `D:`) with total, used and free equal to `shutil.disk_usage` within 1 MB. A unit test feeds recorded `GetLogicalDriveStringsW` and `GetDriveTypeW` results (a remote drive included) through the parsing code and checks that the remote drive gets `net` and no space call.
+Done when: on both runners, `GET /api/tree?path=` lists `C:` (and `D:`) with total equal to `shutil.disk_usage` and used within 1% of it (the disk changes while the job runs). A unit test feeds recorded `GetLogicalDriveStringsW` and `GetDriveTypeW` results (a remote drive included) through the parsing code and checks that the remote drive gets `net` and no space call.
 
 #### S5. Scan loop: size on disk, reparse points, cloud files
 
@@ -186,12 +187,14 @@ All three changes sit in `_list_dir`, `list_files` and `info`, behind three plat
   - Windows: if the attributes show COMPRESSED or SPARSE, call `GetCompressedFileSizeW` and round up to the cluster size. Otherwise round `st_size` up to the cluster size. Get the cluster size once per drive from `GetDiskFreeSpaceW`. If the S1 probe shows that small files report 0 clusters in Explorer terms, record the gap in RISK-8 and do not special-case it yet.
 - `is_link_entry(st)`:
   - macOS and Linux: `stat.S_ISLNK(st.st_mode)` (unchanged).
-  - Windows: `S_ISLNK`, or the REPARSE_POINT attribute with a tag that is a name surrogate (bit `0x20000000` set in the tag: symlinks, junctions, volumes mounted on folders). A folder with such a tag becomes a link tile with `F_LINK`. It is never listed and its size is 0.
+  - Windows: `S_ISLNK`, or the REPARSE_POINT attribute with a tag that is a name surrogate (bit `0x20000000` set in the tag: symlinks, junctions, volumes mounted on folders).
+  - Storage: in `_list_dir`, a folder entry that is a link becomes a child `Node` with `F_LINK` set, state `DONE`, size 0, and is not added to `todo`. That follows the existing pattern for mount points and cloud folders. `_expand` already skips nodes with `F_MOUNT`, `F_DENIED` or `F_CLOUD`; add `F_LINK`. `list_files` skips entries where `is_dir()` is true, so a junction never appears there twice.
+  - Today `F_LINK` (32) is only set on files in `list_files`, and `src/ui.html` defines `F.LINK` but never reads it. S8 adds the link display.
   - A reparse point that is not a name surrogate (for example deduplication or cloud tags) is not a link. It falls through to the cloud check.
 - `is_cloud_entry(st)`:
   - macOS: `st_flags & SF_DATALESS` (unchanged).
   - Windows: RECALL_ON_DATA_ACCESS, RECALL_ON_OPEN or OFFLINE set. A folder with one of them gets `F_CLOUD` and is never listed. That matches today's treatment of a dataless folder.
-- `scandir_nofollow` on Windows: check `os.lstat(path)` with `is_link_entry` before listing, and refuse a link. This is a check-then-use gap, but it matches what the scan loop already decided from the listing, and the proof of concept accepts it. Record it in `SECURITY.md` terms only if S1 shows a cheaper handle-based check.
+- `scandir_nofollow` on Windows: check `os.lstat(path)` with `is_link_entry` before listing, and refuse a link. A link swapped in between the check and the listing still gets through. The proof of concept accepts that gap. Name it in the S5 commit body; a check on an open folder handle is a later improvement.
 - Hard links: leave the `st_nlink > 1` branch unchanged. On Windows it never fires (`st_nlink` is 0), so hard links count once per link.
 
 Done when: on both runners, the S10 check shows `C:/Documents and Settings` as a link tile of size 0, the symlink to `\\diskmap-test.invalid\share` as a link tile, and a fixture compressed file with a size below its logical size.
@@ -227,6 +230,7 @@ Done when: a unit test that runs only on Windows starts two `Server` objects on 
 - APP mode handshake (`serve_stdio`): add `'platform': PLATFORM` and keep `'mac'`. The page reads `conn.platform` when present.
 - Wording from a small table keyed by platform: "This Mac" or "This PC", "in Finder" or "in File Explorer". The Finder purgeable-space note shows on macOS only. The Reveal button shows on macOS only (already gated by `IS_MAC`).
 - Display: paths stay forward-slash keys. Text shown to the user converts `/` to `\` on Windows in one function (`showPath`). `fitTail` splits the converted text on the platform separator.
+- Link display: a tile with `F.LINK` gets a link label in the map and a detail panel note ("This is a link to another folder. Disk Map does not follow links, so its contents are counted where they really are, or not at all if that is another drive."). Use the existing gray for "mixed"; no new hue (AGENTS.md palette rule).
 - The demo stays macOS data with `PLATFORM = 'mac'`.
 
 Done when: `tests/test_build.py` checks the new marker, and the S10 check finds `This PC` and `C:\` in the served page text for the root and a breadcrumb.
@@ -239,7 +243,7 @@ Done when: `tests/test_build.py` checks the new marker, and the S10 check finds 
   - The test checks shared behavior: build the expected value with the platform helpers.
   - Permission tests: Windows needs a deny ACL (`icacls /deny`), and the runner is administrator, so mark them skipped on Windows with that reason.
 - Add Windows-only tests for junctions and symlinks in the scan (S5), using a temporary folder on `C:`.
-- Identical-output guard: before S2, save the `tree` and `info` output for the existing scanner fixture on Linux in a new `tests/data/` folder (`baseline-*.json`). Replace times, the temporary folder path and `gen` with fixed values before saving and before comparing. After each step S2 to S8, the Linux and macOS jobs compare against it. Update the baseline only in a commit that says why.
+- Identical-output guard: add `tests/dump_fixture.py`, which builds a small fixture, scans it, and prints the `tree` and `info` output with times, the temporary folder path and `gen` replaced by fixed values. A CI step on the Linux and macOS jobs runs it twice: once against the build of the commit before S2 (checked out with `git worktree add`), once against the current build, and fails on any difference. A saved file would not work, because root names and `st_blocks` differ between the two systems. Remove the step after M1.
 
 Done when: the unit tests pass on both Windows runners, with each skip giving a reason, and the baseline comparison passes on Linux and macOS.
 
@@ -262,7 +266,7 @@ Done when: the `windows` job is green on both runners on a pull request, and the
 
 - Work on a branch and open a pull request. `ci.yml` runs on every pull request, so each push runs the Windows jobs. Pushing is part of this work: the runners are the only Windows machines.
 - Push after a step is green locally (Linux or macOS unit tests), not after every commit.
-- Start the S1 probe by hand: `gh workflow run windows-probe.yml --ref <branch>`, then `gh run download` for the JSON.
+- The S1 probe runs on the pull request. Get its JSON with `gh run download <run id>`.
 - Main is branch-protected with four required checks. Merge through the pull request.
 
 ### 3.8 Done for the proof of concept
@@ -402,7 +406,7 @@ An installer writes program files and a shortcut. That matches the existing exce
 |---|---|---|---|
 | Windows x64 and Arm64 | Folder build in a zip, later an installer | Authenticode on the executable and the installer | PyInstaller builds per architecture. `windows-11-arm` can build the Arm64 one |
 | macOS | `.app` bundle in a zip or disk image | Developer ID signature, notarization, stapled ticket. Needs a paid Apple Developer membership | A signed app has a stable identity for Full Disk Access. This could replace the `osacompile` launcher. **Verify** the hardened-runtime settings a PyInstaller app needs |
-| Linux | `diskmap.py` as today. A binary waits on Q7 (is Linux a real target) | None | Python is normally present, so the script is enough at first. A binary would likely be a PyInstaller build made on an old distribution, because it depends on the build machine's C library. **Verify** |
+| Linux | `diskmap.py` as today. A binary only if Linux becomes a release target (not decided) | None | Python is normally present, so the script is enough at first. A binary would likely be a PyInstaller build made on an old distribution, because it depends on the build machine's C library. **Verify** |
 
 PyInstaller does not cross-compile. Each platform builds on its own runner.
 
@@ -498,3 +502,4 @@ Answered questions are in section 2.
 - Q6. What full-scan time on a real Windows disk is acceptable? This sets the trigger for the Go or Rust fallback.
 - Q9. Is the mobile goal a scan viewer (OPT-V1) or a folder scanner (OPT-V2)? The scan viewer is the recommendation.
 - Q12. M2b needs a real Windows 11 PC. Who provides it, and when?
+- Q13. Is Linux a release target (a packaged binary), or does it stay a script for people who already have Python?
