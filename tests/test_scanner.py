@@ -70,6 +70,60 @@ class Recorder(object):
         return [p for p in self.paths if isinstance(p, str) and (p == path or p.startswith(path + '/'))]
 
 
+class FakeEntry(object):
+    """A directory entry that counts stat() and is_dir() calls by name, and can report extra
+    st_flags (for example SF_DATALESS)."""
+
+    def __init__(self, real, flags, calls):
+        self._real = real
+        self._flags = flags
+        self._calls = calls
+        self.name = real.name
+        self.path = real.path
+
+    def is_dir(self, follow_symlinks=True):
+        self._calls[self.name] = self._calls.get(self.name, 0) + 1
+        return self._real.is_dir(follow_symlinks=follow_symlinks)
+
+    def stat(self, follow_symlinks=True):
+        self._calls[self.name] = self._calls.get(self.name, 0) + 1
+        st = self._real.stat(follow_symlinks=follow_symlinks)
+        flags = self._flags
+
+        class St(object):
+            def __getattr__(self, k):
+                return flags | getattr(st, 'st_flags', 0) if k == 'st_flags' else getattr(st, k)
+        return St()
+
+
+class ScandirSpy(object):
+    """Stands in for os.scandir: records listed folders and per-entry stat calls (the scanner
+    stats entries through DirEntry.stat, which never calls os.stat or os.lstat)."""
+
+    def __init__(self, flags_by_name=None):
+        self.flags = flags_by_name or {}
+        self.listed = []
+        self.calls = {}
+        self.real = os.scandir
+
+    def __call__(self, path):
+        spy = self
+        spy.listed.append(path)
+        it = spy.real(path)
+
+        class Wrapped(object):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                it.close()
+
+            def __iter__(self):
+                for e in it:
+                    yield FakeEntry(e, spy.flags.get(e.name, 0), spy.calls)
+        return Wrapped()
+
+
 class ScannerCase(unittest.TestCase):
     mounts = ()
 
@@ -212,8 +266,14 @@ class MountTest(ScannerCase):
 
     def test_mount_points_are_never_crossed_or_stated(self):
         rec = Recorder(self)
-        sc, r = self.scan()
-        self.assertTrue(rec.touched(self.root))      # the recorder works
+        spy = ScandirSpy()
+        with mock.patch('os.scandir', side_effect=spy):
+            sc, r = self.scan()
+        self.assertGreater(spy.calls.get('real.bin', 0), 0)     # control: entries are seen
+        self.assertEqual(spy.calls.get('nas', 0), 0)
+        self.assertEqual(spy.calls.get('usb', 0), 0)
+        self.assertIn(self.root, spy.listed)
+        self.assertEqual([p for p in spy.listed if p.startswith((self.net, self.usb))], [])
         self.assertEqual(rec.touched(self.net), [])
         self.assertEqual(rec.touched(self.usb), [])
         nas, usb = r.node.children['nas'], r.node.children['usb']
@@ -316,52 +376,14 @@ class MountTableTest(unittest.TestCase):
         self.assertTrue(m['/media/tester/USB Stick'].ro)
 
 
-class FakeEntry(object):
-    """A directory entry whose stat() reports extra st_flags (for example SF_DATALESS)."""
-
-    def __init__(self, real, flags):
-        self._real = real
-        self._flags = flags
-        self.name = real.name
-        self.path = real.path
-
-    def is_dir(self, follow_symlinks=True):
-        return self._real.is_dir(follow_symlinks=follow_symlinks)
-
-    def stat(self, follow_symlinks=True):
-        st = self._real.stat(follow_symlinks=follow_symlinks)
-        flags = self._flags
-
-        class St(object):
-            def __getattr__(self, k):
-                return flags | getattr(st, 'st_flags', 0) if k == 'st_flags' else getattr(st, k)
-        return St()
-
-
 class CloudTest(ScannerCase):
     def test_cloud_only_folder_is_never_listed(self):
         write(self.root + '/local/a.bin', 8 * KB)
         write(self.root + '/icloud/inside.bin', 256 * KB)
-        real_scandir = os.scandir
-        listed = []
-
-        class Wrapped(object):
-            def __init__(self, path):
-                listed.append(path)
-                self.it = real_scandir(path)
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *a):
-                self.it.close()
-
-            def __iter__(self):
-                for e in self.it:
-                    yield FakeEntry(e, dm.SF_DATALESS if e.name in ('icloud', 'cloud.bin') else 0)
-
         write(self.root + '/cloud.bin', 1)
-        with mock.patch.object(dm, 'IS_MAC', True), mock.patch('os.scandir', side_effect=Wrapped):
+        spy = ScandirSpy({'icloud': dm.SF_DATALESS, 'cloud.bin': dm.SF_DATALESS})
+        listed = spy.listed
+        with mock.patch.object(dm, 'IS_MAC', True), mock.patch('os.scandir', side_effect=spy):
             sc, r = self.scan()
             files = {f[0]: f for f in sc.list_files(self.root)}
         cloud = r.node.children['icloud']

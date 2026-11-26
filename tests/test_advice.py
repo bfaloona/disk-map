@@ -178,6 +178,18 @@ class NameRulesTest(AdviceCase):
         self.assertNotEqual(r.lv, dm.LV_SAFE)
 
     @unittest.expectedFailure
+    def test_global_nvm_node_modules_is_not_safe(self):
+        # Global packages for one Node version are installed tools, not a project's re-creatable install.
+        r, _a, _d = self.rule(H + '/.nvm/versions/node/v20.0.0/lib/node_modules', True)
+        self.assertNotEqual(r.lv, dm.LV_SAFE)
+
+    @unittest.expectedFailure
+    def test_cache_named_folder_in_messages_is_not_safe(self):
+        # ~/Library/Messages is a strong "careful" rule; a cache-named folder inside it outranks it.
+        r, _a, _d = self.rule(H + '/Library/Messages/Attachments/Caches', True)
+        self.assertNotEqual(r.lv, dm.LV_SAFE)
+
+    @unittest.expectedFailure
     def test_cache_folder_named_like_an_app_is_still_a_cache(self):
         # Bundle-ID folder names can end in ".app"; the package rule then outranks ~/Library/Caches.
         # The error is on the cautious side (Your call instead of Safe to clear).

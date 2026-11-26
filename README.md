@@ -59,7 +59,7 @@ Smoke tests drive the real page in a browser with Playwright:
 
 ```
 pip install playwright && playwright install chromium
-python3 tests/make_test_home.py /home/tester     # fake home folder, reserves about 18 GB
+python3 tests/make_test_home.py /home/tester     # fake home folder, reserves about 18 GB on Linux
 python3 build.py
 cd tests && python3 standalone_smoke.py && python3 demo_smoke.py && python3 app_mode_smoke.py
 ```
@@ -69,8 +69,8 @@ and `CHROME` to point at a specific browser.
 
 On macOS, `/home` cannot hold folders and a new folder in `/Users` needs an admin password, so
 `standalone_smoke.py` and `app_mode_smoke.py` need that setup first. `demo_smoke.py` needs no test
-home. `make_test_home.py` uses `mkfile -n` on macOS, which makes sparse files: they take almost no
-disk space, so the map shows them as tiny.
+home. `make_test_home.py` uses `mkfile -n` on macOS, which makes sparse files: on APFS a 10 MB file made
+this way used 16 KB, so the large test files likely show as tiny tiles.
 
 ## Status
 

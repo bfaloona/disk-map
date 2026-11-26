@@ -140,8 +140,7 @@ class HttpTest(unittest.TestCase):
             self.assertEqual(status, 400, p)
         for p in ('relative', '/a\x00b', 5, ['/']):
             resp, _ = self.request('POST', '/api/scan', {'path': p})
-            self.assertIn(resp.status, (400, 500), p)
-            self.assertNotEqual(resp.status, 200, p)
+            self.assertEqual(resp.status, 400, p)
 
     def test_unknown_routes(self):
         self.assertEqual(self.api('/api/nope')[0], 404)
