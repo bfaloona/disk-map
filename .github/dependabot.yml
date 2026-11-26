@@ -1,14 +1,19 @@
-# Security updates only. open-pull-requests-limit: 0 turns off routine version-update pull
-# requests but not security updates, so every Dependabot pull request here is a security fix.
-# That is what lets dependabot-auto-approve.yml approve them without looking up the alert,
-# which would need a personal access token.
+# pip: security updates only. open-pull-requests-limit: 0 turns off routine version-update pull
+# requests but not security updates, so every pip pull request is a security fix and
+# dependabot-auto-approve.yml can approve it without looking up the alert (that lookup needs
+# a personal access token).
+#
+# github-actions: routine updates stay on, because the workflows pin actions by commit SHA and
+# GitHub raises no security alerts for SHA-pinned actions. The auto-approve workflow skips these.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-    open-pull-requests-limit: 0
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
   - package-ecosystem: pip
     directory: /
     schedule:

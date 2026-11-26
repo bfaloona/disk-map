@@ -19,12 +19,25 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
       - run: pip install -r requirements-dev.txt
       - run: pre-commit run --all-files --show-diff-on-failure
+      # The gitleaks pre-commit hook scans only staged changes, so it finds nothing here.
+      # Scan every commit instead.
+      - name: gitleaks over full history
+        env:
+          GITLEAKS_VERSION: 8.30.0
+          GITLEAKS_SHA256: 79a3ab579b53f71efd634f3aaf7e04a0fa0cf206b7ed434638d1547a2470a66e
+        run: |
+          f="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfLO "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$f"
+          echo "$GITLEAKS_SHA256  $f" | sha256sum -c -
+          tar -xzf "$f" gitleaks
+          ./gitleaks git . --no-banner --redact --exit-code 1
 
   tests:
     name: Unit tests (${{ matrix.os }}, Python ${{ matrix.python }})

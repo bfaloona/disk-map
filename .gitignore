@@ -6,3 +6,4 @@ __pycache__/
 # Maintainer-only notes and personal data; never committed.
 /private/
 /handoff/
+/.claude/archive/

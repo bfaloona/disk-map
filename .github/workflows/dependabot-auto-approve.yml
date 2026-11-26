@@ -1,7 +1,8 @@
 name: Dependabot auto-approve
 
-# Approves Dependabot security-fix pull requests. It never checks out or runs the pull
-# request's code. Merging stays a human decision.
+# Approves Dependabot security-fix pull requests (pip; see dependabot.yml for why every pip
+# pull request is a security fix). Routine GitHub Actions updates are left for a human.
+# It never checks out or runs the pull request's code. Merging stays a human decision.
 on: pull_request
 
 permissions: {}
@@ -17,6 +18,7 @@ jobs:
         id: meta
         uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
       - name: Approve
+        if: steps.meta.outputs.package-ecosystem == 'pip'
         run: >-
           gh pr review --approve "$PR_URL"
           --body "Auto-approved: Dependabot security update for $DEPS."
