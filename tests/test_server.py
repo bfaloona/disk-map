@@ -49,7 +49,7 @@ class HttpTest(unittest.TestCase):
 
         class H(dm.Handler):
             pass
-        cls.server = dm.ThreadingHTTPServer(('127.0.0.1', 0), H)
+        cls.server = dm.Server(('127.0.0.1', 0), H)
         cls.server.daemon_threads = True
         cls.port = cls.server.server_address[1]
         H.scanner, H.token, H.port = cls.scanner, cls.TOKEN, cls.port
@@ -93,31 +93,53 @@ class HttpTest(unittest.TestCase):
 
     # ----- the page -----
 
-    def test_page_needs_the_key(self):
-        for q in ('/', '/?t=', '/?t=wrong', '/index.html?t=test-token-12'):
+    def test_page_without_a_valid_key_gets_no_token(self):
+        for q in ('/', '/?t=', '/?t=wrong', '/index.html?t=' + self.TOKEN):
             resp, data = self.request('GET', q, token=None)
-            self.assertEqual(resp.status, 403, q)
-            self.assertNotIn(self.TOKEN.encode(), data)
+            self.assertEqual(resp.status, 200, q)
+            self.assertNotIn(self.TOKEN.encode(), data, q)
+            self.assertIn(b"var TOKEN = '-';", data)
 
     def test_page_with_key_gets_token_filled_in(self):
-        resp, data = self.request('GET', '/?t=' + self.TOKEN, token=None)
+        resp, data = self.request('GET', '/?t=' + dm.Handler.new_launch_key(), token=None)
         self.assertEqual(resp.status, 200)
         html = data.decode('utf-8')
         self.assertIn("var TOKEN = '%s';" % self.TOKEN, html)
         self.assertNotIn('__TOKEN__', html)
         self.assertNotIn('__IS_MAC__', html)
         self.assertEqual(resp.getheader('Cache-Control'), 'no-store')
+        self.assertEqual(resp.getheader('Referrer-Policy'), 'no-referrer')
+
+    def test_launch_key_expires_after_first_use(self):
+        key = dm.Handler.new_launch_key()
+        _r, data = self.request('GET', '/?t=' + key, token=None)
+        self.assertIn(self.TOKEN.encode(), data)
+        _r, data = self.request('GET', '/?t=' + key, token=None)       # a reload soon after still works
+        self.assertIn(self.TOKEN.encode(), data)
+        dm.Handler.launch_keys[key] -= dm.LAUNCH_KEY_LIFE + 1
+        _r, data = self.request('GET', '/?t=' + key, token=None)
+        self.assertNotIn(self.TOKEN.encode(), data)
+
+    def test_launch_api_needs_the_token(self):
+        resp, _ = self.request('POST', '/api/launch', {}, token=None)
+        self.assertEqual(resp.status, 403)
+        resp, data = self.request('POST', '/api/launch', {})
+        self.assertEqual(resp.status, 200)
+        url = json.loads(data.decode('ascii'))['url']
+        self.assertNotIn(self.TOKEN, url)
+        _r, page = self.request('GET', url[url.index('/?'):], token=None)
+        self.assertIn(self.TOKEN.encode(), page)
 
     def test_foreign_host_is_refused(self):
         # A page on another site that rebinds its DNS name to 127.0.0.1 sends its own Host header.
         for host in ('evil.example:%d' % self.port, '127.0.0.1', '127.0.0.1:1', 'localhost.evil.example:%d' % self.port):
-            resp, _ = self.request('GET', '/?t=' + self.TOKEN, token=None, host=host)
+            resp, _ = self.request('GET', '/?t=' + dm.Handler.new_launch_key(), token=None, host=host)
             self.assertEqual(resp.status, 403, host)
             status, body = self.api('/api/status', host=host)
             self.assertEqual(status, 403, host)
             resp, _ = self.request('POST', '/api/scan', {'path': self.root}, host=host)
             self.assertEqual(resp.status, 403, host)
-        resp, _ = self.request('GET', '/?t=' + self.TOKEN, token=None, host='localhost:%d' % self.port)
+        resp, _ = self.request('GET', '/?t=' + dm.Handler.new_launch_key(), token=None, host='localhost:%d' % self.port)
         self.assertEqual(resp.status, 200)
 
     # ----- the API -----
@@ -163,7 +185,7 @@ class HttpTest(unittest.TestCase):
         self.assertEqual(json.loads(data.decode('ascii'))['n'], NAME)
 
     def test_large_replies_are_gzipped_on_request(self):
-        resp, data = self.request('GET', '/?t=' + self.TOKEN, token=None, headers={'Accept-Encoding': 'gzip'})
+        resp, data = self.request('GET', '/', token=None, headers={'Accept-Encoding': 'gzip'})
         self.assertEqual(resp.getheader('Content-Encoding'), 'gzip')
         self.assertEqual(int(resp.getheader('Content-Length')), len(data))
 

@@ -21,10 +21,15 @@ Read-only by design. This file is the project memory; keep it current.
 The interface runs in one of three modes, chosen in `ui.html` at startup:
 
 - **HTTP**: served by `diskmap.py` on 127.0.0.1. The build leaves `__TOKEN__` for the server to fill in.
-  Every API call carries the token; the page itself needs `?t=<token>`; the Host header is checked.
+  Every API call carries the token in a header; the Host header is checked. The page link carries a
+  separate launch key (`?t=`), not the token: it stops working 2 minutes after first use. The page then
+  keeps the token in the tab's `sessionStorage` for reloads and removes the key from the address bar.
+  A second app start gets a fresh link from `POST /api/launch`.
 - **APP**: the artifact inside its installed desktop window. `claude.use("desktop")` gives `fs`,
   `childProcess`, `shell`. The page writes `engine.py` to `~/Library/Application Support/Disk Map/`,
-  starts it with `python3 -u engine.py --stdio`, and exchanges one JSON message per line
+  starts it with `python3 -I -u -c LOADER engine.py <sha256> --stdio` (the loader reads the file once and
+  runs it only if the hash matches; `LOADER` in `ui.html` must equal the one in `core.py`), prefers
+  `/usr/bin/python3` when Apple's developer tools are installed, and exchanges one JSON message per line
   (`{"id","m","path"}` in, `{"id","r"}` or `{"id","e"}` out; first line is `{"ready":1,...}`).
   Messages are ASCII-only in both directions so chunk boundaries cannot split a character.
 - **DEMO**: anywhere else (Claude side panel, browser, mobile). Runs on `demo.json` and shows an
@@ -43,8 +48,11 @@ Scanner requests are the same in every mode: `status`, `tree`, `info`, `scan` (p
 
 ## Rules to keep
 
-- Never add code that deletes, moves or writes the user's files. The only writes are the scan cache,
-  the engine script, and (for `--install-app`) the launcher app.
+- Never add code that deletes, moves or writes the user's files. The only writes are Disk Map's own:
+  the scan cache, the engine script, the app state files (`app.json`, `app.lock`), the log
+  (`~/Library/Logs/diskmap.log`), the page's shortlist in browser storage, and for `--install-app` the
+  script copy, `installed.json` and the launcher app. `--install-app` deletes an earlier launcher only if
+  it holds the `diskmap-installed` marker. Create private files with `open_private` (0600 from the start).
 - Python: standard library only, must run on 3.8 (the python3 from Xcode Command Line Tools is 3.9).
   No `match`, no `X | Y` type syntax. Check with `vermin -t=3.8- dist/diskmap.py`.
 - Never stat or list a network mount unless the user asked to scan it; a dead mount hangs the caller.

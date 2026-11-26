@@ -1536,9 +1536,20 @@ function startApp(d) {
   }, checkAccess);
 }
 if (HTTP) {
-  var startPath = '';
-  try { startPath = decodeURIComponent(location.hash.slice(1)); } catch (e) {}
-  begin(startPath);
+  // The link's key works once; keep the API token for reloads in this tab only, and take the
+  // key out of the address bar so it does not sit in history or session restore.
+  try {
+    if (TOKEN !== '-') sessionStorage.setItem('diskmap.t', TOKEN);
+    else TOKEN = sessionStorage.getItem('diskmap.t') || '-';
+  } catch (e) {}
+  if (location.search) { try { history.replaceState(null, '', location.pathname + location.hash); } catch (e) {} }
+  if (TOKEN === '-') {
+    gate('Open Disk Map from its link', 'This link has expired. Use the link diskmap printed in your terminal, or start Disk Map again.');
+  } else {
+    var startPath = '';
+    try { startPath = decodeURIComponent(location.hash.slice(1)); } catch (e) {}
+    begin(startPath);
+  }
 } else if (window.claude && typeof window.claude.use === 'function') {
   window.claude.use('desktop').then(function (d) {
     if (d && d.fs) startApp(d); else startDemo(d);

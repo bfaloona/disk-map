@@ -1243,11 +1243,67 @@ class Scanner(object):
 INDEX_HTML = r'''#__UI__#'''
 
 
+class Server(ThreadingHTTPServer):
+    """Caps open connections: anyone on this computer can connect without the token, and each
+    connection holds a thread with a large stack."""
+    daemon_threads = True
+    max_conns = 64
+
+    def __init__(self, *a, **kw):
+        ThreadingHTTPServer.__init__(self, *a, **kw)
+        self._slots = threading.BoundedSemaphore(self.max_conns)
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            ThreadingHTTPServer.process_request(self, request, client_address)
+        except Exception:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            ThreadingHTTPServer.process_request_thread(self, request, client_address)
+        finally:
+            self._slots.release()
+
+
+LAUNCH_KEY_LIFE = 120   # seconds a page link keeps working after its first use (reloads, prefetch)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
+    timeout = 30            # drop idle connections
     scanner = None
     token = ''
     port = 0
+    launch_keys = {}        # one-use page keys -> time of first use (0 = unused)
+
+    @classmethod
+    def new_launch_key(cls):
+        """A key for the page link. The link ends up in browser history, so it must not be the
+        API token and must stop working soon after it is used."""
+        key = secrets.token_urlsafe(18)
+        cls.launch_keys[key] = 0
+        return key
+
+    @classmethod
+    def use_launch_key(cls, key):
+        now = time.time()
+        first = None
+        for k, v in list(cls.launch_keys.items()):
+            if secrets.compare_digest(k.encode('utf-8'), key.encode('utf-8', 'surrogateescape')):
+                first = v
+                key = k
+            elif v and now - v > LAUNCH_KEY_LIFE:
+                cls.launch_keys.pop(k, None)
+        if first is None or (first and now - first > LAUNCH_KEY_LIFE):
+            return False
+        if not first:
+            cls.launch_keys[key] = now
+        return True
 
     def log_message(self, fmt, *args):
         pass
@@ -1268,7 +1324,7 @@ class Handler(BaseHTTPRequestHandler):
         elif isinstance(body, str):
             body = body.encode('utf-8')
         headers = [('Content-Type', ctype), ('Cache-Control', 'no-store'),
-                   ('X-Content-Type-Options', 'nosniff')]
+                   ('X-Content-Type-Options', 'nosniff'), ('Referrer-Policy', 'no-referrer')]
         if len(body) > 1500 and 'gzip' in self.headers.get('Accept-Encoding', ''):
             body = gzip.compress(body, 1)
             headers.append(('Content-Encoding', 'gzip'))
@@ -1293,21 +1349,15 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path in ('/', '/index.html'):
             key = parse_qs(u.query).get('t', [''])[0]
-            try:
-                key_ok = secrets.compare_digest(key.encode('utf-8'), self.token.encode('utf-8'))
-            except Exception:
-                key_ok = False
-            if not key_ok:
-                return self._send(403, '<!doctype html><meta charset="utf-8"><title>Disk Map</title>'
-                                       '<p style="font:15px system-ui;margin:3em">Open Disk Map with the full link '
-                                       'that diskmap printed in your terminal (it includes a private key).</p>',
-                                  'text/html; charset=utf-8')
+            # The page holds no secret of its own. With a fresh link key it gets the API token;
+            # without one (a reload) it uses the token it kept in this tab's sessionStorage.
+            give = self.token if key and self.use_launch_key(key) else '-'
             html = INDEX_HTML
             dev = os.environ.get('DISKMAP_UI')
             if dev:
                 with open(dev, encoding='utf-8') as fh:
                     html = fh.read()
-            html = html.replace('__TOKEN__', self.token).replace('__IS_MAC__', '1' if IS_MAC else '0')
+            html = html.replace('__TOKEN__', give).replace('__IS_MAC__', '1' if IS_MAC else '0')
             return self._send(200, html, 'text/html; charset=utf-8')
         if not u.path.startswith('/api/'):
             return self._send(404, {'error': 'not found'})
@@ -1330,12 +1380,16 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(404, {'error': 'not found'})
 
     def do_POST(self):
-        if not self._host_ok():
-            return self._send(403, {'error': 'bad host'})
-        if not self._token_ok():
-            return self._send(403, {'error': 'bad token'})
+        if not self._host_ok() or not self._token_ok():
+            self.close_connection = True     # the body is not read; do not parse it as a request
+            return self._send(403, {'error': 'bad host' if not self._host_ok() else 'bad token'})
+        if self.path == '/api/launch':
+            self.close_connection = True
+            return self._send(200, {'url': 'http://127.0.0.1:%d/?t=%s' % (self.port, self.new_launch_key())})
         try:
             n = int(self.headers.get('Content-Length', '0'))
+            if n >= 65536:
+                self.close_connection = True
             body = json.loads(self.rfile.read(n).decode('utf-8')) if 0 < n < 65536 else {}
             p = body.get('path', '')
             if not isinstance(p, str) or (p != '' and not p.startswith('/')) or '\x00' in p:
@@ -1423,10 +1477,11 @@ def running_instance(state_file):
     try:
         with open(state_file) as fh:
             st = json.load(fh)
-        req = Request('http://127.0.0.1:%d/api/status' % int(st['port']), headers={'X-Diskmap-Token': st['token']})
+        req = Request('http://127.0.0.1:%d/api/launch' % int(st['port']), data=b'{}', method='POST',
+                      headers={'X-Diskmap-Token': st['token'], 'Content-Type': 'application/json'})
         with build_opener(ProxyHandler({})).open(req, timeout=2) as resp:
             if resp.getcode() == 200:
-                return st['url']
+                return json.loads(resp.read().decode('ascii'))['url']
     except Exception:
         pass
     return None
@@ -1627,7 +1682,7 @@ def main():
     server = None
     for port in [args.port] + list(range(args.port + 1, args.port + 20)) + [0]:
         try:
-            server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
+            server = Server(('127.0.0.1', port), Handler)
             break
         except OSError:
             continue
@@ -1640,7 +1695,7 @@ def main():
     Handler.port = port
 
     threading.Thread(target=warm, daemon=True).start()
-    url = 'http://127.0.0.1:%d/?t=%s' % (port, token)
+    url = 'http://127.0.0.1:%d/?t=%s' % (port, Handler.new_launch_key())
 
     def forget_state():
         if state_file:
@@ -1653,7 +1708,7 @@ def main():
         tmp = state_file + '.tmp'
         drop_stale(tmp)
         with open_private(tmp) as fh:
-            fh.write(json.dumps({'port': port, 'token': token, 'url': url, 'pid': os.getpid()}).encode('ascii'))
+            fh.write(json.dumps({'port': port, 'token': token, 'pid': os.getpid()}).encode('ascii'))
         os.replace(tmp, state_file)
     if args.parent:
         def watch_parent():      # the app that started us has quit: stop too
