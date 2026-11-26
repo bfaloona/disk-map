@@ -393,6 +393,16 @@ class CloudTest(ScannerCase):
         self.assertNotIn(self.root + '/icloud', listed)
         self.assertTrue(files['cloud.bin'][3] & dm.F_CLOUD)
 
+    def test_cloud_only_folder_is_not_opened_or_rescanned(self):
+        write(self.root + '/icloud/inside.bin', 256 * KB)
+        spy = ScandirSpy({'icloud': dm.SF_DATALESS})
+        with mock.patch.object(dm, 'IS_MAC', True), mock.patch('os.scandir', side_effect=spy):
+            sc, r = self.scan()
+            t = sc.tree_payload(self.root + '/icloud')
+            self.assertEqual((t.get('stub'), t.get('cloud')), (1, 1))
+            self.assertNotEqual(sc.rescan_subtree(self.root + '/icloud'), 'ok')
+        self.assertNotIn(self.root + '/icloud', spy.listed)
+
 
 class TreeTest(ScannerCase):
     def test_pruned_folders_reload_on_demand(self):
@@ -433,6 +443,30 @@ class TreeTest(ScannerCase):
         self.assertNotIn('b', r.node.children)
         self.assertEqual(r.node.size, allocated(self.root))
         self.assertEqual(r.node.dirs, 1)
+
+    def test_double_slash_paths_are_folded_and_do_not_hang(self):
+        import threading
+        self.assertEqual(dm.clean_path('//Volumes//x/'), '/Volumes/x')
+        self.assertEqual(dm.clean_path('/'), '/')
+        sc, r = self.scan()
+        out = []
+        t = threading.Thread(target=lambda: out.append(sc.tree_payload('//nope/deeper')))
+        t.daemon = True
+        t.start()
+        t.join(5)
+        self.assertFalse(t.is_alive(), 'tree_payload looped on a // path')
+
+    def test_live_listing_refuses_a_folder_swapped_for_a_link(self):
+        write(self.root + '/a/mine.bin', 8 * KB)
+        write(self.root + '/other/theirs.bin', 8 * KB)
+        sc, r = self.scan()
+        shutil.rmtree(self.root + '/a')          # our own fixture
+        os.symlink(self.root + '/other', self.root + '/a')
+        self.assertNotIn('theirs.bin', [f[0] for f in sc.list_files(self.root + '/a')])
+        self.assertEqual(sc.rescan_subtree(self.root + '/a'), 'ok')
+        self.wait(lambda: not sc.sub_jobs)
+        a = r.node.children.get('a')
+        self.assertTrue(a is None or 'theirs.bin' not in str(sc.tree_payload(self.root + '/a')))
 
     def test_request_scan_rejects_unknown_paths(self):
         sc = self.scanner()

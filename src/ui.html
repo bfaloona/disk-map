@@ -321,7 +321,7 @@ function startEngine(python, script) {
       },
       stop: function () { dead = true; try { proc.kill(); } catch (e) {} }
     };
-    try { proc = desktop.childProcess.spawn(python, ['-u', script, '--stdio']); }
+    try { proc = desktop.childProcess.spawn(python, ['-I', '-u', script, '--stdio']); }
     catch (e) { reject(e); return; }
     proc.stdout.on('data', function (chunk) {
       buf += chunk;
@@ -425,7 +425,7 @@ function childKey(parent, c) {
 function adopt(node, pl, gen, volatile) {
   node.n = pl.n; node.s = pl.s || 0; node.k = pl.k; node.lv = pl.lv || 'u';
   node.mt = pl.mt || 0; node.fc = pl.fc || 0; node.dc = pl.dc || 0; node.fl = pl.fl || 0;
-  node.st = pl.st || 0; node.cnt = pl.cnt || 0; node.sc = pl.sc || 0; node.stub = pl.stub || 0;
+  node.st = pl.st || 0; node.cnt = pl.cnt || 0; node.sc = pl.sc || 0; node.stub = pl.stub || 0; node.cloud = pl.cloud || 0;
   if (pl.vol) node.vol = pl.vol;
   if (pl.rstate) node.rstate = pl.rstate;
   if (pl.at) node.at = pl.at;
@@ -476,7 +476,7 @@ function synth(parent, kind, size, extra) {
   n.parent = parent; n.k = kind; n.s = size; n.lv = 'm'; n.n = ''; n.sc = extra || 0; n.fl = 0; n.mt = 0;
   return n;
 }
-function zoomable(n) { return !!n && n.p !== null && n.p !== undefined && (n.k === 'd' || n.k === 'v' || n.k === 'r'); }
+function zoomable(n) { return !!n && n.p !== null && n.p !== undefined && !(n.fl & F.CLOUD) && (n.k === 'd' || n.k === 'v' || n.k === 'r'); }
 
 // ---------- layout ----------
 function squarify(items, x, y, w, h) {
@@ -905,7 +905,9 @@ function renderOverlay() {
   if (!n) return;
   if (n.stub) {
     var net = n.vol && n.vol.net, target = n.scan || '/';
-    if (net) showOverlay('Network volume, not scanned',
+    if (n.cloud) showOverlay('In iCloud, not downloaded',
+      'This folder is not on this Mac, so it takes no space here. Disk Map does not open it, because that would download it.', []);
+    else if (net) showOverlay('Network volume, not scanned',
       'Files here live on another machine and take no space on this Mac, so it is left out unless you ask. Scanning over the network can be slow.',
       [{ label: 'Scan it anyway', act: function () { startScan(target); } }]);
     else if (n.k === 'v') showOverlay('Not scanned yet', 'This volume has not been scanned.',
@@ -1157,7 +1159,7 @@ function renderDetail() {
     }, function () { if (seq === detailSeq) fill({ lv: n.lv, why: 'Details are unavailable for this item.', how: [], notes: [] }); });
   }
   if (zoomable(n) && n !== view.node) acts.appendChild(actionBtn('Zoom in', function () { navigate(n.key); }, true));
-  if (n.stub || n.rstate === 'none') acts.appendChild(actionBtn('Scan', function () { startScan(n.scan || n.p); }));
+  if ((n.stub && !n.cloud) || n.rstate === 'none') acts.appendChild(actionBtn('Scan', function () { startScan(n.scan || n.p); }));
   if (IS_MAC && !demo && !(n.fl & F.NET)) acts.appendChild(actionBtn('Reveal in Finder', function () {
     call('reveal', n.p).then(function () { flash('Shown in Finder'); }, function (e) { flash(String(e.message || e)); });
   }));
@@ -1404,6 +1406,8 @@ function engineGone(msg) {
   clearTimeout(pollTimer);
   gate('The scanner stopped', msg, [{ label: 'Start it again', act: launchEngine }]);
 }
+var APPLE_PY_HOMES = ['/Library/Developer/CommandLineTools/usr/bin/python3',
+  '/Applications/Xcode.app/Contents/Developer/usr/bin/python3'];
 function launchEngine() {
   gate('Starting the scanner…', 'Saved results from the last scan load first, so this is usually quick.');
   var home, script;
@@ -1415,8 +1419,14 @@ function launchEngine() {
       return desktop.fs.writeFile(script, $('engine-src').textContent, 'utf8');
     });
   }).then(function () {
+    // Apple's python3 sits in folders only an admin can change, so it goes first when it is
+    // really installed. Without the developer tools /usr/bin/python3 only offers to install them.
     var candidates = [home + '/.homebrew/bin/python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'];
     var errors = [];
+    return Promise.all(APPLE_PY_HOMES.map(function (p) { return desktop.fs.exists(p); })).then(function (found) {
+      if (found.indexOf(true) >= 0) candidates = ['/usr/bin/python3'].concat(candidates.slice(0, 3));
+      return attempt(0);
+    });
     function attempt(i) {
       if (i >= candidates.length) {
         throw new Error('Disk Map needs Python 3, which it could not start.\n' +
@@ -1430,7 +1440,6 @@ function launchEngine() {
         });
       });
     }
-    return attempt(0);
   }).then(function (conn) {
     engine = conn; IS_MAC = conn.mac;
     store.clear(); infoCache.clear(); view.node = null; serverGen = 0;

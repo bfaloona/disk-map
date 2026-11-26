@@ -166,8 +166,9 @@ def vol_space(path, container_level=False):
 
 
 class Job(object):
-    def __init__(self, root, path, prune, on_done, special, container, limit=0):
+    def __init__(self, root, path, prune, on_done, special, container, limit=0, follow_top=False):
         self.root = root
+        self.follow_top = follow_top   # only a full scan may start at a link (for example /tmp)
         self.path = path
         self.prune = prune
         self.on_done = on_done
@@ -189,6 +190,48 @@ class Root(object):
         self.from_cache = False
         self.job = None
         self.limit = 0
+
+
+def scandir_nofollow(path):
+    """os.scandir that refuses a link. A folder seen in a scan can be swapped for a link
+    later; following it would list another folder's files under this path and its advice."""
+    flags = getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_DIRECTORY', 0)
+    if not flags or os.scandir not in os.supports_fd:
+        return os.scandir(path)
+    fd = os.open(path, os.O_RDONLY | flags)
+    try:
+        return _FdScandir(fd)
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+class _FdScandir(object):
+    """Keeps the folder's descriptor open for as long as the listing is in use."""
+    def __init__(self, fd):
+        self.it = os.scandir(fd)
+        self.fd = fd
+
+    def __iter__(self):
+        return iter(self.it)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+    def close(self):
+        self.it.close()
+        if self.fd >= 0:
+            os.close(self.fd)
+            self.fd = -1
+
+
+def clean_path(p):
+    """normpath that also folds a leading '//', which POSIX normpath keeps and which would
+    otherwise slip past the mount table and loop forever in parent walks."""
+    return os.path.normpath('/' + p.lstrip('/'))
 
 
 class Scanner(object):
@@ -342,7 +385,8 @@ class Scanner(object):
             r.node = Node(path, None)
             r.state = 'scanning'
             r.started = time.time()
-            job = Job(r.node, path, PRUNE_BYTES, None, self._special_for(path), self._container_of(path))
+            job = Job(r.node, path, PRUNE_BYTES, None, self._special_for(path), self._container_of(path),
+                      follow_top=True)
             job.on_done = lambda: self._root_done(r)
             sp = vol_space(path, container_level=True) if path in self.mounts else None
             r.limit = job.limit = sp[1] if sp else 0
@@ -371,6 +415,8 @@ class Scanner(object):
         if node is r.node:
             self.start_scan(r.path)
             return 'ok'
+        if node.flags & F_CLOUD:
+            return 'not downloaded from iCloud'
         if r.state != 'done':
             return 'busy'
         with self.lock:
@@ -454,7 +500,7 @@ class Scanner(object):
         seen = job.seen
         prefix = path if path.endswith('/') else path + '/'
         try:
-            it = os.scandir(path)
+            it = os.scandir(path) if job.follow_top and path == job.path else scandir_nofollow(path)
         except PermissionError:
             node.flags |= F_DENIED
             return todo
@@ -652,7 +698,7 @@ class Scanner(object):
             return ent[2]
         out = []
         try:
-            with os.scandir(path) as it:
+            with scandir_nofollow(path) as it:
                 for e in it:
                     try:
                         if e.is_dir(follow_symlinks=False):
@@ -811,6 +857,12 @@ class Scanner(object):
         base = {'p': path, 'crumbs': self.crumbs(path), 'gen': self.gen}
         m = self.mounts.get(path)
         drive = self.is_drive(path)
+        if r is not None and node is not None and node is not r.node and node.flags & F_CLOUD:
+            # Not downloaded: listing it would make macOS fetch it from iCloud.
+            d = dict(base)
+            d.update({'n': node.name, 's': 0, 'stub': 1, 'cloud': 1, 'lv': level_of(path, True),
+                      'k': 'd', 'fl': F_CLOUD})
+            return d
         if r is None or (node is not None and node is not r.node and node.flags & F_MOUNT):
             # Not scanned: an unscanned drive, a volume mounted inside another tree, or a
             # folder on a drive that has not been scanned yet.
@@ -831,7 +883,10 @@ class Scanner(object):
         if node is None:
             near = os.path.dirname(path)
             while near and near != '/' and self.lookup(near)[1] is None:
-                near = os.path.dirname(near)
+                up = os.path.dirname(near)
+                if up == near:
+                    break
+                near = up
             d = dict(base)
             d.update({'missing': 1, 'near': near})
             return d
@@ -877,7 +932,7 @@ class Scanner(object):
 
     def request_scan(self, path):
         """Scan a drive, or rescan one folder of a scanned drive. Raises ValueError if it cannot."""
-        p = os.path.normpath(path) if path else '/'
+        p = clean_path(path) if path else '/'
         m = self.mounts.get(p)
         if m is not None and m.fstype in SKIP_FS:
             raise ValueError('not a storage volume')
@@ -1159,7 +1214,7 @@ class Handler(BaseHTTPRequestHandler):
             return ''
         if not p.startswith('/') or '\x00' in p:
             return None
-        return os.path.normpath(p)
+        return clean_path(p)
 
     def do_GET(self):
         if not self._host_ok():
@@ -1214,7 +1269,7 @@ class Handler(BaseHTTPRequestHandler):
             p = body.get('path', '')
             if not isinstance(p, str) or (p != '' and not p.startswith('/')) or '\x00' in p:
                 return self._send(400, {'error': 'bad path'})
-            p = os.path.normpath(p) if p else '/'
+            p = clean_path(p) if p else '/'
             sc = self.scanner
             if self.path == '/api/scan':
                 try:
@@ -1257,7 +1312,7 @@ def serve_stdio(scanner):
             if not isinstance(p, str) or (p != '' and not p.startswith('/')) or '\x00' in p:
                 raise ValueError('bad path')
             if p:
-                p = os.path.normpath(p)
+                p = clean_path(p)
             if method == 'status':
                 res = scanner.status()
             elif method == 'tree':
@@ -1340,8 +1395,13 @@ def install_app(dest_arg):
             sys.exit('diskmap: %s already exists and was not made by diskmap. Move it away first, '
                      'or pass another folder: --install-app ~/SomeFolder' % app)
         shutil.rmtree(app)      # replace the app this command built earlier
+    # Apple's python3 lives where only an admin can write; a Homebrew one does not.
+    apple_py = any(os.path.exists(p) for p in (
+        '/Library/Developer/CommandLineTools/usr/bin/python3',
+        '/Applications/Xcode.app/Contents/Developer/usr/bin/python3'))
+    py_path = '/usr/bin/python3' if apple_py else (sys.executable or '/usr/bin/python3')
     lines = [
-        'property pyPath : ' + applescript_string(sys.executable or '/usr/bin/python3'),
+        'property pyPath : ' + applescript_string(py_path),
         'property mapScript : ' + applescript_string(script),
         'on launchMap()',
         'set py to pyPath',
@@ -1350,7 +1410,7 @@ def install_app(dest_arg):
         'on error',
         'set py to "/usr/bin/python3"',
         'end try',
-        'do shell script (quoted form of py) & " " & (quoted form of mapScript) & " --app --parent $PPID > /dev/null 2>&1 &"',
+        'do shell script (quoted form of py) & " -I " & (quoted form of mapScript) & " --app --parent $PPID > /dev/null 2>&1 &"',
         'end launchMap',
         'on run',
         'launchMap()',
