@@ -209,7 +209,7 @@ Another session is reworking the tests on its own branch. This section lists nee
 | Fixture cases to add | A junction, a symbolic link, a hard-linked pair, a compressed file, a sparse file, a path over 260 characters, a name with a comma and a quote |
 | Browser smoke tests | Playwright runs on Windows, macOS and Linux. Run the standalone test on each runner |
 | Packaged build test | Start the executable with `--no-browser`, read the link from its output, drive the page, check that the process exits cleanly |
-| Manual checks on real machines | CI cannot simulate OneDrive placeholders, a disconnected mapped drive, SmartScreen, antivirus, or Full Disk Access. Keep a short checklist per platform, like "Not verified on macOS" in `CLAUDE.md` |
+| Manual checks on real machines | CI cannot simulate OneDrive placeholders, a disconnected mapped drive, SmartScreen, antivirus, or Full Disk Access. Keep a short checklist per platform, like "Not verified on macOS" in `AGENTS.md` |
 
 CI runners likely run as administrator, so "no access" cases differ from a normal user's machine. **Verify**
 
@@ -248,7 +248,7 @@ An export holds every file and folder name on the drive. Keep the transfer local
 
 | ID | Step | Done when |
 |---|---|---|
-| M0 | Baseline on a real Mac. Work through "Not verified on macOS" in `CLAUDE.md` and save reference outputs | The list is closed or each open item is recorded |
+| M0 | Baseline on a real Mac. Work through "Not verified on macOS" in `AGENTS.md` and save reference outputs | The list is closed or each open item is recorded |
 | M1 | Platform layer with no behavior change. Move the OS-specific code from section 2 behind one set of functions. Replace the two-valued flag with a platform string and keep the old field for now | The three smoke tests pass. Tree and info output for the fixture is identical before and after |
 | M2 | Run from source on one real Windows machine. Path model, drive list, link rules, size on disk, cache folder, Reveal | A full scan of `C:` finishes. Totals are close to what Windows reports. Scan time is recorded. The **Verify** items in section 3 are answered |
 | M3 | Windows advice rules and platform wording | Each rule is checked on the machine from M2 |
