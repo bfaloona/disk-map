@@ -73,7 +73,7 @@ Scanner requests are the same in every mode: `status`, `tree`, `info`, `scan` (p
 
 ## Commits
 
-- Install the hooks once: `pip install pre-commit && pre-commit install`. They run gitleaks (secrets)
+- Install the hooks once: `pip install -r requirements-dev.txt && pre-commit install`. They run gitleaks (secrets)
   and `tools/check_private.py` (email addresses, real home folder paths, network addresses, and any
   terms listed in the git-ignored `private/patterns.txt`). CI runs the same config.
 - Conventional commit messages (`fix(scanner): ...`, `docs: ...`).
