@@ -1432,6 +1432,15 @@ def running_instance(state_file):
     return None
 
 
+INSTALL_MARKER = 'diskmap-installed'
+
+# Runs a script only if its bytes still match the SHA-256 taken when it was written, reading the
+# file once so it cannot be swapped between the check and the run. The page has a copy (ui.html).
+LOADER = ("import hashlib,sys;p,h=sys.argv[1:3];s=open(p,'rb').read();"
+          "hashlib.sha256(s).hexdigest()==h or sys.exit('diskmap: '+p+' changed after Disk Map wrote it, so it was not run.');"
+          "sys.argv=[p]+sys.argv[3:];exec(compile(s,p,'exec'),{'__name__':'__main__','__file__':p})")
+
+
 def applescript_string(text):
     return '"' + text.replace('\\', '\\\\').replace('"', '\\"') + '"'
 
@@ -1442,11 +1451,16 @@ def install_app(dest_arg):
         sys.exit('diskmap: --install-app only works on macOS')
     home = os.path.expanduser('~')
     support = os.path.join(home, 'Library', 'Application Support', APP_NAME)
-    os.makedirs(support, exist_ok=True)
+    private_dir(support)
     src = os.path.abspath(__file__)
     script = os.path.join(support, 'diskmap.py')
+    with open(src, 'rb') as fh:
+        code = fh.read()
     if os.path.realpath(src) != os.path.realpath(script):
-        shutil.copyfile(src, script)
+        drop_stale(script)      # also removes a link planted there, rather than writing through it
+        with open_private(script) as fh:
+            fh.write(code)
+    digest = hashlib.sha256(code).hexdigest()
     if dest_arg:
         dest_dir = os.path.abspath(os.path.expanduser(dest_arg))
     elif os.access('/Applications', os.W_OK):
@@ -1461,8 +1475,10 @@ def install_app(dest_arg):
             mine = json.load(fh)
     except Exception:
         mine = []
+    marker = os.path.join(app, 'Contents', 'Resources', INSTALL_MARKER)
     if os.path.lexists(app):
-        if app not in mine:
+        # installed.json can be edited by any program, so also require the marker inside the app.
+        if app not in mine or os.path.islink(app) or not os.path.isfile(marker) or os.path.islink(marker):
             sys.exit('diskmap: %s already exists and was not made by diskmap. Move it away first, '
                      'or pass another folder: --install-app ~/SomeFolder' % app)
         shutil.rmtree(app)      # replace the app this command built earlier
@@ -1474,6 +1490,8 @@ def install_app(dest_arg):
     lines = [
         'property pyPath : ' + applescript_string(py_path),
         'property mapScript : ' + applescript_string(script),
+        'property mapHash : ' + applescript_string(digest),
+        'property loader : ' + applescript_string(LOADER),
         'on launchMap()',
         'set py to pyPath',
         'try',
@@ -1481,7 +1499,7 @@ def install_app(dest_arg):
         'on error',
         'set py to "/usr/bin/python3"',
         'end try',
-        'do shell script (quoted form of py) & " -I " & (quoted form of mapScript) & " --app --parent $PPID > /dev/null 2>&1 &"',
+        'do shell script (quoted form of py) & " -I -c " & (quoted form of loader) & " " & (quoted form of mapScript) & " " & mapHash & " --app --parent $PPID > /dev/null 2>&1 &"',
         'end launchMap',
         'on run',
         'launchMap()',
@@ -1499,10 +1517,16 @@ def install_app(dest_arg):
         sys.exit('diskmap: could not run osacompile: %s' % exc)
     if p.returncode != 0 or not os.path.isdir(app):
         sys.exit('diskmap: could not build the app:\n%s' % (p.stderr or p.stdout))
+    drop_stale(marker)
+    with open_private(marker) as fh:
+        fh.write(app.encode('utf-8', 'surrogateescape'))
     if app not in mine:
         mine.append(app)
-    with open(record, 'w') as fh:
-        json.dump(mine, fh)
+    tmp = record + '.tmp'
+    drop_stale(tmp)
+    with open_private(tmp) as fh:
+        fh.write(json.dumps(mine).encode('ascii'))
+    os.replace(tmp, record)
     print('Installed %s' % app)
     print('Open it from Spotlight, Launchpad or the Applications folder. It stays in the Dock while it')
     print('runs. Click the Dock icon to bring the map back, and quit it like any other app.')

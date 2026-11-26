@@ -4,7 +4,9 @@ and the stdio engine used by the desktop app (one ASCII JSON message per line).
 Only temp folders are ever scanned. A request with an empty path means "/" (the whole disk),
 so these tests never send one with a valid token.
 """
+import hashlib
 import http.client
+import re
 import json
 import os
 import queue
@@ -18,7 +20,7 @@ import unittest
 from unittest import mock
 from urllib.parse import quote
 
-from loader import ENGINE, diskmap
+from loader import ENGINE, PAGE, diskmap
 
 dm = diskmap()
 NAME = 'café ☃.bin'       # non-ASCII file name
@@ -186,7 +188,11 @@ class StdioTest(unittest.TestCase):
         home = os.path.join(self.tmp, 'home')
         os.makedirs(home)
         env = dict(os.environ, HOME=home)
-        self.proc = subprocess.Popen([sys.executable, '-u', ENGINE, '--stdio', '--no-cache', '--no-autoscan', self.root],
+        # Started the way the desktop app starts it: isolated, through the hash-checking loader.
+        with open(ENGINE, 'rb') as fh:
+            digest = hashlib.sha256(fh.read()).hexdigest()
+        self.proc = subprocess.Popen([sys.executable, '-I', '-u', '-c', dm.LOADER, ENGINE, digest,
+                                      '--stdio', '--no-cache', '--no-autoscan', self.root],
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         self.lines = queue.Queue()
         self.raw = []
@@ -264,6 +270,24 @@ class StdioTest(unittest.TestCase):
         self.next_msg()
         self.proc.stdin.close()
         self.assertEqual(self.proc.wait(timeout=10), 0)
+
+
+
+class LoaderTest(unittest.TestCase):
+    def test_changed_engine_does_not_run(self):
+        p = subprocess.run([sys.executable, '-I', '-c', dm.LOADER, ENGINE, '0' * 64, '--stdio'],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn(b'so it was not run', p.stderr)
+        self.assertNotIn(b'ready', p.stdout)
+
+    def test_page_and_script_use_the_same_loader(self):
+        with open(PAGE, encoding='utf-8') as fh:
+            page = fh.read()
+        m = re.search(r'var LOADER = ((?:"[^"]*"\s*\+?\s*)+);', page)
+        self.assertIsNotNone(m)
+        js = ''.join(re.findall(r'"([^"]*)"', m.group(1)))
+        self.assertEqual(js, dm.LOADER)
 
 
 if __name__ == '__main__':

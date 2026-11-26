@@ -297,7 +297,7 @@ function asciiJSON(obj) {
 }
 // Runs the scanner (a Python script this page carries) as a child process of the desktop app
 // and talks to it with one JSON message per line.
-function startEngine(python, script) {
+function startEngine(python, script, digest) {
   return new Promise(function (resolve, reject) {
     var proc, buf = '', errText = '', pending = new Map(), nextId = 1, ready = false, dead = false;
     function fail(msg) {
@@ -321,7 +321,7 @@ function startEngine(python, script) {
       },
       stop: function () { dead = true; try { proc.kill(); } catch (e) {} }
     };
-    try { proc = desktop.childProcess.spawn(python, ['-I', '-u', script, '--stdio']); }
+    try { proc = desktop.childProcess.spawn(python, digest ? ['-I', '-u', '-c', LOADER, script, digest, '--stdio'] : ['-I', '-u', script, '--stdio']); }
     catch (e) { reject(e); return; }
     proc.stdout.on('data', function (chunk) {
       buf += chunk;
@@ -377,6 +377,8 @@ function call(method, path) {
   if (!engine) return Promise.reject(new Error('The scanner is not running'));
   return engine.request(method, path || '');
 }
+// A name with a line break would paste as two paths, and the second could be a real folder.
+function hasControl(p) { return /[\x00-\x1f\x7f]/.test(p); }
 function copyText(text) {
   if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
   return new Promise(function (resolve, reject) {
@@ -1164,6 +1166,7 @@ function renderDetail() {
     call('reveal', n.p).then(function () { flash('Shown in Finder'); }, function (e) { flash(String(e.message || e)); });
   }));
   acts.appendChild(actionBtn('Copy path', function () {
+    if (hasControl(n.p)) { flash('Not copied: this name contains a line break or other hidden character'); return; }
     copyText(n.p).then(
       function () { flash('Path copied'); }, function () { flash('Could not copy'); });
   }));
@@ -1216,9 +1219,12 @@ function renderShortlist() {
   box.appendChild(t);
   var acts = el('div', 'actions');
   acts.appendChild(actionBtn('Copy paths', function () {
-    var text = shortlist.map(function (x) { return x.p; }).join('\n');
+    var ok = shortlist.filter(function (x) { return !hasControl(x.p); });
+    var skipped = shortlist.length - ok.length;
+    var text = ok.map(function (x) { return x.p; }).join('\n');
     copyText(text).then(
-      function () { flash('Paths copied'); }, function () { flash('Could not copy'); });
+      function () { flash(skipped ? 'Paths copied, except ' + skipped + ' with hidden characters in the name' : 'Paths copied'); },
+      function () { flash('Could not copy'); });
   }));
   acts.appendChild(actionBtn('Clear list', function () { shortlist = []; saveShortlist(); renderShortlist(); renderDetail(); }));
   box.appendChild(acts);
@@ -1406,17 +1412,31 @@ function engineGone(msg) {
   clearTimeout(pollTimer);
   gate('The scanner stopped', msg, [{ label: 'Start it again', act: launchEngine }]);
 }
+// Same as LOADER in core.py (a test keeps them equal): the engine runs only if the file still
+// holds the bytes just written, read once so it cannot be swapped between check and run.
+var LOADER = "import hashlib,sys;p,h=sys.argv[1:3];s=open(p,'rb').read();" +
+  "hashlib.sha256(s).hexdigest()==h or sys.exit('diskmap: '+p+' changed after Disk Map wrote it, so it was not run.');" +
+  "sys.argv=[p]+sys.argv[3:];exec(compile(s,p,'exec'),{'__name__':'__main__','__file__':p})";
+function sha256Hex(text) {
+  if (!(window.crypto && crypto.subtle && window.TextEncoder)) return Promise.reject(new Error('no crypto'));
+  return crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)).then(function (buf) {
+    return Array.prototype.map.call(new Uint8Array(buf), function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
+  });
+}
 var APPLE_PY_HOMES = ['/Library/Developer/CommandLineTools/usr/bin/python3',
   '/Applications/Xcode.app/Contents/Developer/usr/bin/python3'];
 function launchEngine() {
   gate('Starting the scanner…', 'Saved results from the last scan load first, so this is usually quick.');
-  var home, script;
-  desktop.os.homedir().then(function (h) {
+  var home, script, digest = '';
+  var src = $('engine-src').textContent;
+  sha256Hex(src).then(function (d) { digest = d; }, function () {}).then(function () {
+    return desktop.os.homedir();
+  }).then(function (h) {
     home = h.replace(/\/$/, '');
     var dir = home + '/Library/Application Support/Disk Map';
     script = dir + '/engine.py';
     return desktop.fs.mkdir(dir, { recursive: true }).then(function () {
-      return desktop.fs.writeFile(script, $('engine-src').textContent, 'utf8');
+      return desktop.fs.writeFile(script, src, 'utf8');
     });
   }).then(function () {
     // Apple's python3 sits in folders only an admin can change, so it goes first when it is
@@ -1434,7 +1454,7 @@ function launchEngine() {
       }
       return desktop.fs.exists(candidates[i]).then(function (yes) {
         if (!yes) return attempt(i + 1);
-        return startEngine(candidates[i], script).catch(function (e) {
+        return startEngine(candidates[i], script, digest).catch(function (e) {
           errors.push(candidates[i] + ': ' + String((e && e.message) || e).slice(0, 300));
           return attempt(i + 1);
         });
