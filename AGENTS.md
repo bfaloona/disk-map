@@ -11,6 +11,8 @@ Read-only by design. This file is the project memory for coding agents (Claude C
 - `src/advice.py`: the advice rules (by location, folder name, package type, file extension).
 - `src/ui.html`: the whole interface (canvas treemap, detail panel, shortlist). One file, no libraries.
 - `src/demo.json`: example data the artifact shows before it is installed. Regenerate with `tools/gen_demo.py`.
+- `docs/screenshot.png`: the README image, taken from the example data. Regenerate with
+  `tools/make_screenshot.py` after a visible interface change.
 - `build.py`: writes `dist/diskmap.py` (standalone) and `dist/app/index.html` (artifact page, which
   embeds the scanner as its engine). `dist/` is not committed.
 - `tests/`: standard-library unit tests (`test_*.py`, `python3 -m unittest discover -s tests -t tests`)

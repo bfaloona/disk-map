@@ -7,6 +7,8 @@ An interactive treemap of where a Mac's storage goes. Zoom from drives down to s
 click anything for details and plain advice on how safe it is to remove. It only reads: it never
 deletes, moves or changes a file. The one action it takes is Reveal in Finder.
 
+![Disk Map showing an example home folder as a treemap, with the Library folder selected and its advice in the side panel](docs/screenshot.png)
+
 ## Two ways to run it
 
 | | Standalone script | Desktop app (Claude artifact) |
