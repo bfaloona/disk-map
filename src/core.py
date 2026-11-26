@@ -250,8 +250,8 @@ class Scanner(object):
         self._lf = {}
         self._vols = None
         self._vols_at = 0.0
-        self.root_name = self._mac_root_name()
         self.refresh_mounts(True)
+        self.root_name = self._mac_root_name()
 
     # ----- mounts and volumes -----
 
@@ -261,6 +261,8 @@ class Scanner(object):
         try:
             for name in os.listdir('/Volumes'):
                 p = '/Volumes/' + name
+                if p in self.mounts:    # a real mount (maybe a dead share): never stat it
+                    continue
                 if os.path.islink(p) and os.path.realpath(p) == '/':
                     return name
         except OSError:
@@ -276,6 +278,15 @@ class Scanner(object):
             self.mounts_at = now
             self._vols = None
         return self.mounts
+
+    def net_mount_of(self, path):
+        """The network mount that holds path, or None. Uses only the mount table, never a stat."""
+        best = None
+        for mp, m in list(self.mounts.items()):
+            if path == mp or path.startswith(mp.rstrip('/') + '/'):
+                if best is None or len(mp) > len(best.path):
+                    best = m
+        return best if best is not None and not best.local else None
 
     def display_name(self, path):
         if path == '':
@@ -375,12 +386,21 @@ class Scanner(object):
     # ----- scanning -----
 
     def start_scan(self, path):
-        """Scan a volume or pinned folder from scratch, in the background."""
+        """Scan a volume or pinned folder from scratch, in the background.
+        Raises ValueError when the mount table cannot be read, since the scan could then
+        walk into network shares."""
+        r = self.roots.get(path)
+        if r is not None and r.state == 'scanning':
+            return r
+        # Outside the lock: both can block on a slow drive, and every request needs the lock.
+        self.refresh_mounts(True)
+        if IS_MAC and not self.mounts:
+            raise ValueError('Could not read the list of mounted drives, so the scan did not start. Try again.')
+        sp = vol_space(path, container_level=True) if path in self.mounts else None
         with self.lock:
             r = self.roots.get(path)
             if r is not None and r.state == 'scanning':
                 return r
-            self.refresh_mounts(True)
             kind = 'folder' if path in self.pinned and path not in self.mounts else 'volume'
             r = Root(path, kind)
             r.node = Node(path, None)
@@ -389,7 +409,6 @@ class Scanner(object):
             job = Job(r.node, path, PRUNE_BYTES, None, self._special_for(path), self._container_of(path),
                       follow_top=True)
             job.on_done = lambda: self._root_done(r)
-            sp = vol_space(path, container_level=True) if path in self.mounts else None
             r.limit = job.limit = sp[1] if sp else 0
             r.job = job
             r.links = job.seen
@@ -988,7 +1007,7 @@ class Scanner(object):
         name = os.path.basename(path) or path
         out = {'p': path, 'n': self.display_name(path) if path == '/' else name}
         m = self.mounts.get(path)
-        net = m is not None and not m.local
+        net = self.net_mount_of(path) is not None
         st = None
         if not net:
             try:
@@ -1301,7 +1320,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/reveal':
                 if not IS_MAC:
                     return self._send(400, {'error': 'Reveal in Finder only works on macOS'})
-                if not os.path.lexists(p):
+                if self.scanner.net_mount_of(p) is None and not os.path.lexists(p):
                     return self._send(404, {'error': 'That item no longer exists'})
                 subprocess.Popen(['/usr/bin/open', '-R', p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return self._send(200, {'ok': 1})
@@ -1538,7 +1557,10 @@ def main():
         if not args.no_autoscan:
             for p in (pinned or ['/']):
                 if p not in loaded:
-                    scanner.start_scan(p)
+                    try:
+                        scanner.start_scan(p)
+                    except ValueError as exc:
+                        sys.stderr.write('diskmap: %s\n' % exc)
 
     if args.stdio:
         threading.Thread(target=warm, daemon=True).start()

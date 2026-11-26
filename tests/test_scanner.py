@@ -294,6 +294,22 @@ class MountTest(ScannerCase):
         self.assertTrue(tree.get('stub'))
         self.assertEqual(tree['vol'].get('net'), 1)
 
+    def test_info_below_a_network_mount_does_not_touch_it(self):
+        sc, r = self.scan()
+        rec = Recorder(self)
+        sc.info(self.net + '/should-not-count.bin')
+        self.assertEqual(rec.touched(self.net), [])
+        self.assertIsNotNone(sc.net_mount_of(self.net + '/deep/x'))
+        self.assertIsNone(sc.net_mount_of(self.usb + '/x'))
+        self.assertIsNone(sc.net_mount_of(self.root + '/nasty'))
+
+    def test_scan_refuses_without_a_mount_table(self):
+        sc = self.scanner()
+        with mock.patch.object(dm, 'IS_MAC', True), mock.patch.object(sc, 'mounts', {}), \
+                mock.patch.object(dm, 'read_mounts', lambda: {}):
+            with self.assertRaises(ValueError):
+                sc.start_scan(self.root)
+
 
 class VolumeListTest(ScannerCase):
     MAC = ('/Volumes/Backup', '/Volumes/.timemachine', '/Volumes/Share', '/System/Volumes/Data',
