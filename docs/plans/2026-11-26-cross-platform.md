@@ -50,7 +50,7 @@ Proof of concept checklist (section 3.6). Tick each step when its "done when" ho
 | Q11 | Must the real-Mac baseline (M0) finish first? | No. M0 runs in parallel. The identical-output checks in S9 guard macOS and Linux behavior |
 | PoC scope | How far the proof of concept goes | Run from source in HTTP mode. Section 3.2 lists what waits until later |
 
-Still open: Q2 to Q6, Q9, Q12 and Q13 in section 11. None of them blocks the proof of concept.
+Still open: Q2 to Q6, Q9, Q12 (the date only) and Q13 in section 11. None of them blocks the proof of concept.
 
 ## 3. Proof of concept: Windows from source
 
@@ -501,5 +501,5 @@ Answered questions are in section 2.
 - Q5. Console window or no console for the Windows build? No console needs an automatic stop rule.
 - Q6. What full-scan time on a real Windows disk is acceptable? This sets the trigger for the Go or Rust fallback.
 - Q9. Is the mobile goal a scan viewer (OPT-V1) or a folder scanner (OPT-V2)? The scan viewer is the recommendation.
-- Q12. M2b needs a real Windows 11 PC. Who provides it, and when?
+- Q12. M2b needs a real Windows 11 PC. Answered: a friend of the maintainer provides it. Still open: when.
 - Q13. Is Linux a release target (a packaged binary), or does it stay a script for people who already have Python?
