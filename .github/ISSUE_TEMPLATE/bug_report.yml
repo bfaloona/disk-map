@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the report. Before you paste output or screenshots, remove anything personal:
+        Before you paste output or screenshots, remove anything personal:
         your user name in paths, file names, network volume names. Security problems go to
         the Security tab (Report a vulnerability), not here.
   - type: textarea

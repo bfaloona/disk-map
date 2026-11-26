@@ -1,7 +1,6 @@
 # Contributing to Disk Map
 
-Thanks for helping. Bug reports from real Macs are especially useful right now: see the
-"Now" section of [`ROADMAP.md`](ROADMAP.md).
+Bug reports from real Macs are the most useful help right now: see the "Now" section of [`ROADMAP.md`](ROADMAP.md).
 
 ## Before you start
 
@@ -47,8 +46,8 @@ The full list is in [`AGENTS.md`](AGENTS.md), "Rules to keep". The most importan
 To protect terms only you know about (your name, your host names), list them as regular
 expressions in `private/patterns.txt`. That folder is git-ignored.
 
-CI runs the same checks and the unit tests on every pull request, so a pull request without the
-hooks is still checked.
+CI runs the same checks, a gitleaks scan of the full history, and the unit tests on every pull
+request. A pull request from someone without the hooks gets the same checks there.
 
 ## Pull requests
 
