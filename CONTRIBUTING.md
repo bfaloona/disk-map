@@ -44,7 +44,9 @@ The full list is in [`AGENTS.md`](AGENTS.md), "Rules to keep". The most importan
   fixture, for example), end the line with the comment `check-private: allow`.
 
 To protect terms only you know about (your name, your host names), list them as regular
-expressions in `private/patterns.txt`. That folder is git-ignored.
+expressions in `private/patterns.txt`. That folder is git-ignored. Run
+`python3 tools/private_names.py` to add the names of your own project folders, so a test fixture
+or example data cannot copy one by accident.
 
 CI runs the same checks, a gitleaks scan of the full history, and the unit tests on every pull
 request. A pull request from someone without the hooks gets the same checks there.

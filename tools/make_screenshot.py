@@ -7,6 +7,7 @@ specific browser. Usage: python3 tools/make_screenshot.py [--dark]
 import functools
 import http.server
 import os
+import subprocess
 import sys
 import threading
 
@@ -24,6 +25,11 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
 def main():
     if not os.path.exists(os.path.join(APP, 'index.html')):
         sys.exit('Run python3 build.py first.')
+    # A screenshot is an image, so the commit hooks cannot read it. Check the data it shows.
+    check = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'check_private.py'),
+                            os.path.join(ROOT, 'src', 'demo.json')])
+    if check.returncode:
+        sys.exit('src/demo.json holds personal data; fix it before taking a screenshot.')
     dark = '--dark' in sys.argv
     out = os.path.join(ROOT, 'docs', 'screenshot-dark.png' if dark else 'screenshot.png')
     srv = http.server.ThreadingHTTPServer(('127.0.0.1', 0), functools.partial(Quiet, directory=APP))

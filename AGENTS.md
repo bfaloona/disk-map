@@ -61,6 +61,11 @@ Scanner requests are the same in every mode: `status`, `tree`, `info`, `scan` (p
   No `match`, no `X | Y` type syntax. Check with `vermin -t=3.8- dist/diskmap.py`.
 - Never stat or list a network mount unless the user asked to scan it; a dead mount hangs the caller.
   Mount points are recognized by name from the mount table, before any stat.
+- Fixtures (`tests/make_test_home.py`), example data (`src/demo.json`) and screenshots use invented
+  names only, never folder, project or host names from the maintainer's drive. Run
+  `tools/private_names.py` so the commit hook knows those names. A screenshot is an image, so the hook
+  cannot read it: take it only with `tools/make_screenshot.py`, which checks the data first, and look
+  at it before you commit it.
 - File names are untrusted: put them in the page with `textContent`, never as markup.
 - `ui.html` must not contain three single quotes in a row (it is embedded in a Python raw string), and
   the Python source must not contain `</script`, `<script` or `<!--` (it is embedded in a script tag).
