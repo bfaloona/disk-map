@@ -1,0 +1,26 @@
+name: Dependabot auto-approve
+
+# Approves Dependabot security-fix pull requests. It never checks out or runs the pull
+# request's code. Merging stays a human decision.
+on: pull_request
+
+permissions: {}
+
+jobs:
+  approve:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'bfaloona/disk-map'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Read Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+      - name: Approve
+        run: >-
+          gh pr review --approve "$PR_URL"
+          --body "Auto-approved: Dependabot security update for $DEPS."
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          DEPS: ${{ steps.meta.outputs.dependency-names }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,16 @@
+# Security updates only. open-pull-requests-limit: 0 turns off routine version-update pull
+# requests but not security updates, so every Dependabot pull request here is a security fix.
+# That is what lets dependabot-auto-approve.yml approve them without looking up the alert,
+# which would need a personal access token.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
