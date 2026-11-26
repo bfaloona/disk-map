@@ -1,0 +1,1523 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Disk Map</title>
+<!--__MANIFEST__-->
+<link rel="icon" href="data:,">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f9; --surface: #ffffff; --cont1: #f1f1f1; --cont2: #e6e6e6;
+  --ink: #191919; --ink2: #666666; --hair: #e7e7e7; --axis: #c2c2c2;
+  --border: rgba(11,11,11,0.10); --wash: rgba(11,11,11,0.05); --accent: #1b64be;
+  --lv-s: #00b894; --lv-r: #257de0; --lv-c: #f47230; --lv-k: #8a8a8a; --lv-m: #cfcfcf;
+  --age-0: #84b9f3; --age-1: #519ced; --age-2: #257de0; --age-3: #1b64be; --age-4: #0f4a96;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0b0b0b; --surface: #191919; --cont1: #232323; --cont2: #2c2c2c;
+    --ink: #efefef; --ink2: #9c9c9c; --hair: #303030; --axis: #474747;
+    --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.06); --accent: #6aabf1;
+    --lv-s: #00a888; --lv-r: #338ced; --lv-c: #e76624; --lv-k: #6a6a6a; --lv-m: #3d3d3d;
+    --age-0: #1757ac; --age-1: #2370cd; --age-2: #338ced; --age-3: #6aabf1; --age-4: #9dc8f7;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0b0b0b; --surface: #191919; --cont1: #232323; --cont2: #2c2c2c;
+  --ink: #efefef; --ink2: #9c9c9c; --hair: #303030; --axis: #474747;
+  --border: rgba(255,255,255,0.10); --wash: rgba(255,255,255,0.06); --accent: #6aabf1;
+  --lv-s: #00a888; --lv-r: #338ced; --lv-c: #e76624; --lv-k: #6a6a6a; --lv-m: #3d3d3d;
+  --age-0: #1757ac; --age-1: #2370cd; --age-2: #338ced; --age-3: #6aabf1; --age-4: #9dc8f7;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 13px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--page); color: var(--ink);
+  display: grid; grid-template-rows: auto auto 1fr auto; overflow: hidden;
+}
+button { font: inherit; color: inherit; }
+header {
+  display: flex; align-items: center; gap: 12px; padding: 8px 14px;
+  border-bottom: 1px solid var(--hair); background: var(--surface); min-width: 0;
+}
+.brand { font-weight: 700; letter-spacing: .01em; white-space: nowrap; }
+#crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1; overflow: hidden; }
+#crumbs button {
+  border: 0; background: none; padding: 3px 6px; border-radius: 5px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 22ch; color: var(--ink2);
+}
+#crumbs button:hover { background: var(--wash); color: var(--ink); }
+#crumbs button[aria-current] { color: var(--ink); font-weight: 600; cursor: default; flex-shrink: 0; max-width: 34ch; }
+#crumbs .sep { color: var(--axis); flex-shrink: 0; }
+.tools { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.btn {
+  border: 1px solid var(--border); background: var(--surface); padding: 4px 10px;
+  border-radius: 6px; cursor: pointer; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: var(--wash); }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn.primary { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.btn.primary:hover:not(:disabled) { background: var(--ink); opacity: .88; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; background: var(--surface); padding: 4px 10px; cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg-label { color: var(--ink2); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; min-height: 0; }
+#mapwrap { position: relative; min-width: 0; min-height: 0; background: var(--surface); }
+#map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: pointer; }
+#tip {
+  position: absolute; pointer-events: none; z-index: 5; display: none; max-width: 320px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(0,0,0,.18); padding: 7px 10px;
+}
+#tip .v { font-weight: 700; font-size: 14px; }
+#tip .n { overflow-wrap: anywhere; }
+#tip .m { color: var(--ink2); font-size: 12px; }
+#overlay {
+  position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+  padding: 24px; background: var(--surface);
+}
+#overlay .card { max-width: 440px; text-align: center; }
+#overlay h3 { margin: 0 0 6px; font-size: 16px; }
+#overlay p { margin: 0 0 14px; color: var(--ink2); }
+#busy {
+  position: absolute; top: 8px; right: 8px; display: none; z-index: 4;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px;
+  font-size: 12px; color: var(--ink2);
+}
+
+#banner {
+  display: none; align-items: center; gap: 12px; padding: 8px 14px; background: var(--cont1);
+  border-bottom: 1px solid var(--hair); flex-wrap: wrap;
+}
+#banner span { flex: 1; min-width: 200px; }
+#gate {
+  position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center;
+  padding: 24px; background: var(--page);
+}
+#gate .card { max-width: 480px; }
+#gate h1 { margin: 0 0 8px; font-size: 20px; }
+#gate p { margin: 0 0 14px; color: var(--ink2); white-space: pre-wrap; overflow-wrap: anywhere; }
+#gate .actions { margin-top: 0; }
+#side { border-left: 1px solid var(--hair); background: var(--surface); overflow-y: auto; min-height: 0; }
+#side section { padding: 14px 16px; border-bottom: 1px solid var(--hair); }
+.kind { color: var(--ink2); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+h2 { margin: 2px 0 2px; font-size: 17px; line-height: 1.25; overflow-wrap: anywhere; }
+.path { color: var(--ink2); font: 11.5px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.bigsize { margin-top: 8px; font-size: 22px; font-weight: 700; }
+.bigsize small { font-size: 12px; font-weight: 400; color: var(--ink2); margin-left: 6px; }
+.scale { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; margin: 12px 0 4px; }
+.scale div {
+  text-align: center; font-size: 11px; padding: 4px 2px; background: var(--cont1); color: var(--ink2);
+  border-radius: 3px; white-space: nowrap;
+}
+.scale div.on { color: #0b0b0b; font-weight: 700; }
+.scale div.on.s { background: var(--lv-s); } .scale div.on.r { background: var(--lv-r); }
+.scale div.on.c { background: var(--lv-c); } .scale div.on.k { background: var(--lv-k); }
+.scale-cap { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--ink2); }
+.verdict { margin: 12px 0 2px; font-weight: 700; font-size: 14px; }
+.why { margin: 2px 0 8px; }
+.sub { font-weight: 600; margin: 10px 0 2px; font-size: 12px; color: var(--ink2); text-transform: uppercase; letter-spacing: .04em; }
+ul.how, ul.notes { margin: 0; padding-left: 18px; }
+ul.how li, ul.notes li { margin: 3px 0; }
+code { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--cont1); padding: 1px 4px; border-radius: 3px; overflow-wrap: anywhere; }
+dl.facts { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin: 12px 0 0; }
+dl.facts dt { color: var(--ink2); } dl.facts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.muted { color: var(--ink2); }
+.small { font-size: 12px; }
+h3.sec { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink2); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+h3.sec span { text-transform: none; letter-spacing: 0; font-weight: 400; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rows { list-style: none; margin: 0; padding: 0; }
+.rows li { display: flex; align-items: center; gap: 2px; }
+.row {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  border: 0; background: none; text-align: left; padding: 4px 6px; border-radius: 5px; cursor: pointer; position: relative;
+}
+.row:hover { background: var(--wash); }
+.row.sel { background: var(--wash); box-shadow: inset 2px 0 0 var(--ink); }
+.row .sw { width: 10px; height: 10px; border-radius: 2px; }
+.row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .sz { color: var(--ink2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.row .bar { position: absolute; left: 24px; bottom: 1px; height: 2px; background: var(--axis); border-radius: 1px; }
+.icon { border: 0; background: none; cursor: pointer; padding: 3px 6px; border-radius: 5px; color: var(--ink2); }
+.icon:hover { background: var(--wash); color: var(--ink); }
+.total { display: flex; justify-content: space-between; font-weight: 700; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--hair); }
+
+footer {
+  display: flex; align-items: center; gap: 16px; padding: 6px 14px; border-top: 1px solid var(--hair);
+  background: var(--surface); font-size: 12px; color: var(--ink2); min-width: 0;
+}
+#legend { display: flex; gap: 12px; flex-wrap: nowrap; align-items: center; flex-shrink: 0; }
+#legend .li { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+#legend .sw { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+#hint { margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+#status { white-space: nowrap; display: flex; align-items: center; gap: 8px; color: var(--ink); flex-shrink: 0; }
+#status progress { width: 110px; height: 6px; }
+@media (max-width: 900px) {
+  body { overflow: auto; grid-template-rows: auto auto auto auto; }
+  main { grid-template-columns: 1fr; }
+  #mapwrap { height: 58vh; }
+  #side { border-left: 0; border-top: 1px solid var(--hair); overflow: visible; }
+  #hint { display: none; }
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">Disk Map</div>
+  <nav id="crumbs" aria-label="Location"></nav>
+  <div class="tools">
+    <span class="seg-label" id="colorlabel">Color by</span>
+    <div class="seg" role="group" aria-labelledby="colorlabel">
+      <button type="button" data-mode="imp" aria-pressed="true">Importance</button>
+      <button type="button" data-mode="age" aria-pressed="false">Age</button>
+    </div>
+    <button type="button" class="btn" id="zoomout" title="Zoom out one level (Esc)">Zoom out</button>
+    <button type="button" class="btn" id="rescan" title="Read this folder again from disk">Rescan this folder</button>
+  </div>
+</header>
+<div id="banner"><span id="banner-text"></span><div id="banner-actions"></div></div>
+<main>
+  <div id="mapwrap">
+    <canvas id="map" tabindex="0" role="img" aria-label="Storage treemap. The same items are listed in the Contents panel."></canvas>
+    <div id="busy">Loading…</div>
+    <div id="tip" role="status"></div>
+    <div id="overlay"><div class="card"><h3 id="ov-title"></h3><p id="ov-text"></p><div id="ov-actions"></div></div></div>
+  </div>
+  <aside id="side" aria-label="Details">
+    <section id="detail" aria-live="polite"></section>
+    <section id="contents"></section>
+    <section id="shortlist"></section>
+  </aside>
+</main>
+<div id="gate"><div class="card"><h1 id="gate-title"></h1><p id="gate-text"></p><div class="actions" id="gate-actions"></div></div></div>
+<footer>
+  <div id="legend"></div>
+  <div id="hint">Click: select · Double-click: open that folder · Scroll: zoom one level · Esc: zoom out</div>
+  <div id="status"></div>
+</footer>
+
+<script type="text/plain" id="engine-src">#__ENGINE_SRC__#</script>
+<script type="application/json" id="demo-data">#__DEMO__#</script>
+<script>
+(function () {
+'use strict';
+var TOKEN = '__TOKEN__';
+var IS_MAC = '__IS_MAC__' === '1';
+// Three ways this page runs. HTTP: served by diskmap.py on this computer. APP: installed as a
+// desktop app, where it runs the scanner itself. DEMO: anywhere else, on built-in example data.
+var HTTP = TOKEN !== '';
+var desktop = null, engine = null, demo = null;
+var F = { DENIED: 1, MOUNT: 2, NET: 4, CLOUD: 8, PKG: 16, LINK: 32, ERR: 64 };
+var LEVELS = {
+  s: { label: 'Safe to clear', mark: '✓' },
+  r: { label: 'Your call', mark: '◆' },
+  c: { label: 'Careful', mark: '▲' },
+  k: { label: 'Keep', mark: '■' },
+  m: { label: 'Mixed', mark: '' },
+  u: { label: 'Not recognized', mark: '?' }
+};
+var AGES = [
+  { max: 30 * 86400, label: 'Under 1 month' }, { max: 182 * 86400, label: '1 to 6 months' },
+  { max: 365 * 86400, label: '6 to 12 months' }, { max: 730 * 86400, label: '1 to 2 years' },
+  { max: Infinity, label: 'Over 2 years' }
+];
+function $(id) { return document.getElementById(id); }
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined && text !== null) e.textContent = text;
+  return e;
+}
+
+// ---------- formatting ----------
+function fmtBytes(n) {
+  if (!(n > 0)) return '0 bytes';
+  if (n < 1000) return n + ' bytes';
+  var u = ['KB', 'MB', 'GB', 'TB', 'PB'], i = -1;
+  do { n /= 1000; i++; } while (n >= 999.5 && i < u.length - 1);
+  var d = n >= 100 ? 0 : n >= 10 ? 1 : 2;
+  if (i === 0) d = 0;
+  return n.toFixed(d) + ' ' + u[i];
+}
+function fmtNum(n) { return (n || 0).toLocaleString(); }
+function fmtDate(ts) {
+  return new Date(ts * 1000).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+function rel(ts) {
+  var s = Date.now() / 1000 - ts;
+  if (s < 90) return 'just now';
+  if (s < 3600) return Math.round(s / 60) + ' minutes ago';
+  if (s < 86400 * 1.5) return Math.round(s / 3600) + ' hours ago';
+  if (s < 86400 * 60) return Math.round(s / 86400) + ' days ago';
+  if (s < 86400 * 365 * 2) return Math.round(s / (86400 * 30.4)) + ' months ago';
+  return (s / (86400 * 365)).toFixed(1) + ' years ago';
+}
+function pct(a, b) {
+  if (!(b > 0)) return '';
+  var p = 100 * a / b;
+  return (p >= 10 ? p.toFixed(0) : p >= 1 ? p.toFixed(1) : p >= 0.1 ? p.toFixed(2) : '<0.1') + '%';
+}
+function ageBucket(mt) {
+  var a = Date.now() / 1000 - mt;
+  for (var i = 0; i < AGES.length; i++) if (a < AGES[i].max) return i;
+  return AGES.length - 1;
+}
+function nodeName(n) {
+  if (n.k === 'o') return fmtNum(n.cnt) + (n.cnt === 1 ? ' smaller item' : ' smaller items');
+  if (n.k === 'u') return n.sc ? 'Not scanned yet' : 'Not visible to the scan';
+  if (n.k === 'e') return 'Free space';
+  return n.n;
+}
+
+// ---------- server ----------
+function api(url, body) {
+  var opts = { headers: { 'X-Diskmap-Token': TOKEN } };
+  if (body) { opts.method = 'POST'; opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
+  return fetch(url, opts).then(function (r) {
+    return r.json().catch(function () { return { error: 'Unreadable response' }; }).then(function (j) {
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      return j;
+    });
+  });
+}
+function asciiJSON(obj) {
+  return JSON.stringify(obj).replace(/[\u007f-￿]/g, function (c) {
+    return '\\u' + ('0000' + c.charCodeAt(0).toString(16)).slice(-4);
+  });
+}
+// Runs the scanner (a Python script this page carries) as a child process of the desktop app
+// and talks to it with one JSON message per line.
+function startEngine(python, script) {
+  return new Promise(function (resolve, reject) {
+    var proc, buf = '', errText = '', pending = new Map(), nextId = 1, ready = false, dead = false;
+    function fail(msg) {
+      if (dead) return;
+      dead = true;
+      pending.forEach(function (p) { p.reject(new Error('The scanner stopped')); });
+      pending.clear();
+      if (!ready) reject(new Error(msg));
+      else if (engine === conn) { engine = null; engineGone(msg); }
+    }
+    var conn = {
+      request: function (method, path) {
+        if (dead) return Promise.reject(new Error('The scanner stopped'));
+        var id = nextId++;
+        return new Promise(function (res, rej) {
+          pending.set(id, { resolve: res, reject: rej });
+          proc.stdin.write(asciiJSON({ id: id, m: method, path: path }) + '\n').catch(function (e) {
+            pending.delete(id); rej(e);
+          });
+        });
+      },
+      stop: function () { dead = true; try { proc.kill(); } catch (e) {} }
+    };
+    try { proc = desktop.childProcess.spawn(python, ['-u', script, '--stdio']); }
+    catch (e) { reject(e); return; }
+    proc.stdout.on('data', function (chunk) {
+      buf += chunk;
+      var i;
+      while ((i = buf.indexOf('\n')) >= 0) {
+        var line = buf.slice(0, i); buf = buf.slice(i + 1);
+        if (!line) continue;
+        var msg;
+        try { msg = JSON.parse(line); } catch (e) { continue; }
+        if (msg.ready && !ready) { ready = true; conn.mac = !!msg.mac; resolve(conn); continue; }
+        var p = pending.get(msg.id);
+        if (!p) continue;
+        pending.delete(msg.id);
+        if (msg.e !== undefined) p.reject(new Error(msg.e)); else p.resolve(msg.r);
+      }
+    });
+    proc.stderr.on('data', function (chunk) { errText = (errText + chunk).slice(-1500); });
+    proc.on('error', function (e) { fail(String((e && e.message) || e)); });
+    proc.on('exit', function (code) { fail((errText.trim() || 'The scanner exited') + (code ? ' (exit code ' + code + ')' : '')); });
+    setTimeout(function () { if (!ready && !dead) { try { proc.kill(); } catch (e) {} fail('No answer from ' + python); } }, 25000);
+  });
+}
+function demoNode(path) { return demo && demo.index[path]; }
+function demoCall(method, path) {
+  if (method === 'status') return Promise.resolve({ gen: 1, active: [], loading: 0 });
+  var n = demoNode(path || demo.root);
+  if (!n) return Promise.reject(new Error('Not in the example data'));
+  if (method === 'tree') {
+    var crumbs = [], p = n.p;
+    while (p.length >= demo.root.length) { var d = demoNode(p); crumbs.unshift({ p: p, n: d.n }); p = p.replace(/\/[^\/]*$/, ''); }
+    var pl = {}; for (var k in n) pl[k] = n[k];
+    pl.crumbs = crumbs; pl.gen = 1; pl.rstate = 'done'; pl.root = demo.root;
+    return Promise.resolve(pl);
+  }
+  if (method === 'info') {
+    var r = demo.rules[n.ri] || {};
+    var info = { p: n.p, n: n.n, lv: n.lv, title: r.t, why: r.w, how: r.h || [], kind: n.kind,
+                 size: n.s, files: n.fc, dirs: n.dc, mt: n.mt,
+                 notes: ['This is example data, not your files. Install the app to scan your own Mac.'] };
+    if (n.via) { info.via = n.via; info.via_n = n.via.replace(/^.*\//, ''); }
+    return Promise.resolve(info);
+  }
+  return Promise.reject(new Error('Not available with example data'));
+}
+function call(method, path) {
+  if (HTTP) {
+    if (method === 'scan' || method === 'reveal') return api('/api/' + method, { path: path || '' });
+    if (method === 'status') return api('/api/status');
+    return api('/api/' + method + '?path=' + enc(path || ''));
+  }
+  if (demo) return demoCall(method, path);
+  if (method === 'reveal') return desktop.shell.showItemInFolder(path);
+  if (!engine) return Promise.reject(new Error('The scanner is not running'));
+  return engine.request(method, path || '');
+}
+function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  return new Promise(function (resolve, reject) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    if (ok) resolve(); else reject(new Error('copy failed'));
+  });
+}
+function enc(p) {
+  try { return encodeURIComponent(p); } catch (e) {}
+  // The name holds bytes that are not valid text. Encode them so the server gets the same bytes back.
+  var out = '';
+  function hx(b) { return '%' + (b < 16 ? '0' : '') + b.toString(16).toUpperCase(); }
+  for (var i = 0; i < p.length; i++) {
+    var c = p.charCodeAt(i);
+    if (c >= 0xD800 && c <= 0xDBFF && i + 1 < p.length) {
+      var d = p.charCodeAt(i + 1);
+      if (d >= 0xDC00 && d <= 0xDFFF) { out += encodeURIComponent(p.substr(i, 2)); i++; continue; }
+    }
+    if (c >= 0xD800 && c <= 0xDFFF) { out += hx(0xE0 | (c >> 12)) + hx(0x80 | ((c >> 6) & 0x3F)) + hx(0x80 | (c & 0x3F)); continue; }
+    out += encodeURIComponent(p.charAt(i));
+  }
+  return out;
+}
+var hashPaths = {};
+
+// ---------- data store (client-side cache of everything fetched so far) ----------
+var store = new Map();
+var inflight = new Map();
+var status = { gen: 0, active: [], loading: 0 };
+var serverGen = 0;
+var view = { path: '', node: null };
+var selKey = null;
+var colorMode = 'imp';
+
+function childKey(parent, c) {
+  if (c.p !== undefined && c.p !== null) return c.p;
+  if (c.k === 'o') return parent.key + '\u0000o';
+  if (c.k === 'u') return parent.key + '\u0000u';
+  return parent.key === '/' ? '/' + c.n : parent.key + '/' + c.n;
+}
+function adopt(node, pl, gen, volatile) {
+  node.n = pl.n; node.s = pl.s || 0; node.k = pl.k; node.lv = pl.lv || 'u';
+  node.mt = pl.mt || 0; node.fc = pl.fc || 0; node.dc = pl.dc || 0; node.fl = pl.fl || 0;
+  node.st = pl.st || 0; node.cnt = pl.cnt || 0; node.sc = pl.sc || 0; node.stub = pl.stub || 0;
+  if (pl.vol) node.vol = pl.vol;
+  if (pl.rstate) node.rstate = pl.rstate;
+  if (pl.at) node.at = pl.at;
+  if (pl.scan !== undefined) node.scan = pl.scan;
+  if (pl.c) {
+    var kidsVolatile = volatile || pl.rstate === 'scanning';
+    node.c = pl.c.map(function (pc) {
+      var key = childKey(node, pc);
+      var cn = store.get(key);
+      if (!cn) { cn = { key: key, p: (pc.k === 'o' || pc.k === 'u') ? null : key }; store.set(key, cn); }
+      cn.parent = node;
+      adopt(cn, pc, gen, kidsVolatile);
+      return cn;
+    });
+    node.gen = gen;
+  } else if (node.c && (volatile || node.gen !== gen)) {
+    node.c = undefined; node.full = false;     // deeper detail from an older scan state: drop it
+  }
+}
+function merge(path, pl) {
+  var node = store.get(path);
+  if (!node) { node = { key: path, p: path, parent: null }; store.set(path, node); }
+  if (pl.missing) { node.missing = true; node.near = pl.near; return node; }
+  node.missing = false;
+  adopt(node, pl, pl.gen, false);
+  if (!pl.c) node.c = [];
+  node.full = true; node.gen = pl.gen;
+  node.crumbs = pl.crumbs; node.rootPath = pl.root; node.cached = pl.cached;
+  if (pl.gen > serverGen) serverGen = pl.gen;
+  return node;
+}
+function fresh(node) { return !!node && node.full && node.gen === serverGen && !node.st && node.rstate !== 'scanning'; }
+function fetchTree(path, force) {
+  var node = store.get(path);
+  if (!force && fresh(node)) return Promise.resolve(node);
+  if (inflight.has(path)) return inflight.get(path);
+  var p = call('tree', path).then(function (pl) {
+    inflight.delete(path);
+    return merge(path, pl);
+  }, function (e) { inflight.delete(path); throw e; });
+  inflight.set(path, p);
+  return p;
+}
+function synth(parent, kind, size, extra) {
+  var key = parent.key + '\u0000' + kind;
+  var n = store.get(key);
+  if (!n) { n = { key: key, p: null }; store.set(key, n); }
+  n.parent = parent; n.k = kind; n.s = size; n.lv = 'm'; n.n = ''; n.sc = extra || 0; n.fl = 0; n.mt = 0;
+  return n;
+}
+function zoomable(n) { return !!n && n.p !== null && n.p !== undefined && (n.k === 'd' || n.k === 'v' || n.k === 'r'); }
+
+// ---------- layout ----------
+function squarify(items, x, y, w, h) {
+  var out = new Array(items.length), total = 0, i;
+  for (i = 0; i < items.length; i++) total += items[i].wt;
+  if (!(total > 0) || w <= 0 || h <= 0) return out;
+  var scale = (w * h) / total;
+  i = 0;
+  while (i < items.length) {
+    var short = Math.min(w, h);
+    if (short <= 0) break;
+    var start = i, sum = 0, best = Infinity, mn = Infinity, mx = 0;
+    while (i < items.length) {
+      var a = items[i].wt * scale;
+      var ns = sum + a, nmn = Math.min(mn, a), nmx = Math.max(mx, a);
+      var worst = Math.max((short * short * nmx) / (ns * ns), (ns * ns) / (short * short * nmn));
+      if (worst > best) break;
+      best = worst; sum = ns; mn = nmn; mx = nmx; i++;
+    }
+    var thick = sum / short, off = 0;
+    for (var j = start; j < i; j++) {
+      var len = (items[j].wt * scale) / thick;
+      out[j] = w >= h ? { x: x, y: y + off, w: thick, h: len } : { x: x + off, y: y, w: len, h: thick };
+      off += len;
+    }
+    if (w >= h) { x += thick; w -= thick; } else { y += thick; h -= thick; }
+  }
+  return out;
+}
+function kidsOf(node, isRoot) {
+  var arr = node.c || [], items = [], i, n;
+  var atTop = !isRoot && node.k === 'v' && node.parent && node.parent.k === 'r';
+  if (node.k === 'r') {
+    var localSum = 0;
+    for (i = 0; i < arr.length; i++) {
+      n = arr[i];
+      if (!(n.vol && n.vol.net)) localSum += (n.vol && n.vol.total) || n.s || 0;
+    }
+    if (!(localSum > 0)) localSum = 1;
+    for (i = 0; i < arr.length; i++) {
+      n = arr[i];
+      var wt = (n.vol && n.vol.net) ? localSum * 0.05 : ((n.vol && n.vol.total) || n.s || 0);
+      items.push({ node: n, wt: Math.max(wt, localSum * 0.03) });
+    }
+    return items;
+  }
+  var sum = 0;
+  for (i = 0; i < arr.length; i++) sum += arr[i].s;
+  if (atTop && node.vol && !node.vol.net) {
+    if (!arr.length && node.s > 0) items.push({ node: synth(node, 'u', node.s, 1), wt: node.s });
+    if (node.vol.free > 0) items.push({ node: synth(node, 'e', node.vol.free), wt: node.vol.free });
+    sum += node.vol.free || 0;
+  }
+  var floor = (sum || 1) * 0.004;
+  for (i = 0; i < arr.length; i++) {
+    n = arr[i];
+    if (n.s > 0) items.push({ node: n, wt: n.s });
+    else if (isRoot && (n.fl & (F.DENIED | F.NET | F.MOUNT | F.CLOUD))) items.push({ node: n, wt: floor });
+  }
+  return items;
+}
+var HEAD = 17;
+function layoutAll(root, W, H) {
+  var out = [];
+  function place(node, x, y, w, h, depth) {
+    var label = null, keys = null;
+    if (depth > 0 && w >= 56 && h >= 40) {
+      // A folder whose only content is another folder: show the chain as one tile.
+      var cur = node, guard = 0;
+      while (guard++ < 40 && cur.k === 'd' && cur.c && cur.c.length === 1) {
+        var only = cur.c[0];
+        if (only.k !== 'd' || !only.c || !only.c.length || (only.fl & F.PKG) || (cur.fl & F.PKG)) break;
+        if (!keys) { keys = [node.key]; label = nodeName(node); }
+        keys.push(only.key); label += '/' + only.n; cur = only;
+      }
+      node = cur;
+    }
+    var tile = { node: node, x: x, y: y, w: w, h: h, depth: depth, leaf: true, head: 0, label: label, keys: keys };
+    if (depth > 0) out.push(tile);
+    if (out.length > 14000) return;
+    var ix = x, iy = y, iw = w, ih = h;
+    if (depth > 0) {
+      if (w < 14 || h < 14) return;
+      var head = (w >= 56 && h >= 40) ? HEAD : 0;
+      var pad = head ? 2 : 1;
+      ix = x + pad; iw = w - 2 * pad;
+      iy = y + (head || pad); ih = h - (head || pad) - pad;
+      if (iw < 6 || ih < 6) return;
+    }
+    var items = kidsOf(node, depth === 0);
+    if (!items.length) return;
+    if (depth > 0) { tile.leaf = false; tile.head = head; }
+    items.sort(function (a, b) { return b.wt - a.wt; });
+    var rects = squarify(items, ix, iy, iw, ih);
+    for (var i = 0; i < items.length; i++) {
+      var r = rects[i];
+      if (!r || r.w < 0.8 || r.h < 0.8) continue;
+      place(items[i].node, r.x, r.y, r.w, r.h, depth + 1);
+    }
+  }
+  if (root) place(root, 0, 0, W, H, 0);
+  return out;
+}
+
+// ---------- drawing ----------
+var canvas = $('map'), ctx = canvas.getContext('2d');
+var base = document.createElement('canvas'), bctx = base.getContext('2d');
+var snapC = document.createElement('canvas'), sctx = snapC.getContext('2d');
+var W = 0, H = 0, dpr = 1, tiles = [], hoverTile = null, animating = false;
+var C = {};
+function readColors() {
+  var cs = getComputedStyle(document.documentElement);
+  function v(n) { return cs.getPropertyValue(n).trim(); }
+  C = { surface: v('--surface'), cont1: v('--cont1'), cont2: v('--cont2'), ink: v('--ink'), ink2: v('--ink2'),
+        axis: v('--axis'), lv: { s: v('--lv-s'), r: v('--lv-r'), c: v('--lv-c'), k: v('--lv-k'), m: v('--lv-m'), u: v('--lv-m') },
+        age: [v('--age-0'), v('--age-1'), v('--age-2'), v('--age-3'), v('--age-4')] };
+  C.inkOn = {};
+}
+function lum(hex) {
+  var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  if (!m) return 0.5;
+  var c = [m[1], m[2], m[3]].map(function (h) {
+    var x = parseInt(h, 16) / 255;
+    return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+}
+function inkOn(bg) {
+  var hit = C.inkOn[bg];
+  if (hit) return hit;
+  var L = lum(bg);
+  hit = (1.05 / (L + 0.05)) > ((L + 0.05) / 0.0537) ? '#ffffff' : '#0b0b0b';
+  C.inkOn[bg] = hit;
+  return hit;
+}
+function fillFor(n) {
+  if (n.k === 'e') return { bg: C.surface, dash: true };
+  if (n.k === 'u') return { bg: C.lv.m, dash: !!n.sc };
+  if ((n.fl & (F.NET | F.DENIED)) || (n.k === 'v' && !n.c && n.rstate === 'none' && n.vol && n.vol.net)) return { bg: C.cont1, dash: true };
+  if (colorMode === 'age') {
+    if (!n.mt || n.k === 'o' || n.k === 'v') return { bg: C.lv.m };
+    return { bg: C.age[ageBucket(n.mt)] };
+  }
+  return { bg: C.lv[n.lv] || C.lv.m };
+}
+function fit(c, text, maxW) {
+  if (maxW < 14) return '';
+  var est = Math.floor(maxW / 5.2);
+  if (text.length > est + 6) text = text.slice(0, est + 6);
+  if (c.measureText(text).width <= maxW) return text;
+  var n = Math.min(text.length, Math.max(1, Math.floor(maxW / 6.4)));
+  while (n > 1 && c.measureText(text.slice(0, n) + '…').width > maxW) n--;
+  return n > 1 ? text.slice(0, n) + '…' : '';
+}
+function isNet(n) { return !!(n.fl & F.NET) || !!(n.vol && n.vol.net && !n.s); }
+function fitTail(c, text, maxW) {
+  if (c.measureText(text).width <= maxW) return text;
+  var parts = text.split('/');
+  while (parts.length > 1) {
+    parts.shift();
+    var t = '…/' + parts.join('/');
+    if (c.measureText(t).width <= maxW) return t;
+  }
+  return fit(c, parts[0], maxW);
+}
+function hasKey(t, key) { return t.node.key === key || (!!t.keys && t.keys.indexOf(key) >= 0); }
+function tileLabel(t) { return t.label || nodeName(t.node); }
+function sizeText(n) { return fmtBytes(n.s) + (n.st ? '+' : ''); }
+function drawBase() {
+  var c = bctx;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.fillStyle = C.surface; c.fillRect(0, 0, W, H);
+  c.textBaseline = 'alphabetic';
+  for (var i = 0; i < tiles.length; i++) {
+    var t = tiles[i], n = t.node;
+    var g = (t.w > 6 && t.h > 6) ? 1 : 0.25;
+    var x = t.x + g, y = t.y + g, w = t.w - 2 * g, h = t.h - 2 * g;
+    if (w <= 0 || h <= 0) continue;
+    if (!t.leaf) {
+      c.fillStyle = (t.depth % 2) ? C.cont1 : C.cont2;
+      c.fillRect(x, y, w, h);
+      if (t.head) {
+        var tx = x + 5;
+        if (colorMode === 'imp' && 'srck'.indexOf(n.lv) >= 0) {
+          c.fillStyle = C.lv[n.lv]; c.fillRect(tx, y + 5, 7, 7); tx += 11;
+        }
+        c.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        var st = sizeText(n), sw = 0;
+        if (w > 150) {
+          c.font = '11px system-ui, -apple-system, "Segoe UI", sans-serif';
+          sw = c.measureText(st).width;
+          c.fillStyle = C.ink2; c.fillText(st, x + w - sw - 5, y + 12);
+          c.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
+        }
+        c.fillStyle = C.ink;
+        c.fillText(t.label ? fitTail(c, t.label, x + w - tx - (sw ? sw + 12 : 5)) : fit(c, nodeName(n), x + w - tx - (sw ? sw + 12 : 5)), tx, y + 12);
+      }
+      continue;
+    }
+    var f = fillFor(n);
+    c.fillStyle = f.bg; c.fillRect(x, y, w, h);
+    if (f.dash && w > 4 && h > 4) {
+      c.save(); c.strokeStyle = C.axis; c.lineWidth = 1; c.setLineDash([4, 3]);
+      c.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1); c.restore();
+    }
+    if (w >= 38 && h >= 15) {
+      var ink = f.dash ? C.ink2 : inkOn(f.bg);
+      c.fillStyle = ink;
+      c.font = '600 11px system-ui, -apple-system, "Segoe UI", sans-serif';
+      var label = nodeName(n);
+      if (n.fl & F.DENIED) label += ' (no access)';
+      c.fillText(fit(c, label, w - 9), x + 5, y + 12);
+      if (h >= 30) {
+        c.font = '10.5px system-ui, -apple-system, "Segoe UI", sans-serif';
+        c.globalAlpha = 0.82;
+        var sub = isNet(n) ? 'network, not scanned' : (n.fl & F.DENIED) ? 'size unknown' : sizeText(n);
+        c.fillText(fit(c, sub, w - 9), x + 5, y + 25);
+        c.globalAlpha = 1;
+      }
+    }
+  }
+}
+function outline(c, t, color, lw) {
+  c.strokeStyle = color; c.lineWidth = lw;
+  c.strokeRect(t.x + lw / 2, t.y + lw / 2, Math.max(t.w - lw, 0), Math.max(t.h - lw, 0));
+}
+function paint() {
+  if (animating) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(base, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  var st = selTile();
+  if (st) { outline(ctx, st, C.surface, 4); outline(ctx, st, C.ink, 2.5); }
+  if (hoverTile && hoverTile !== st) outline(ctx, hoverTile, C.ink, 1.5);
+}
+function selTile() {
+  if (selKey === null) return null;
+  for (var i = tiles.length - 1; i >= 0; i--) if (hasKey(tiles[i], selKey)) return tiles[i];
+  return null;
+}
+function tileAt(x, y) {
+  for (var i = tiles.length - 1; i >= 0; i--) {
+    var t = tiles[i];
+    if (x >= t.x && x < t.x + t.w && y >= t.y && y < t.y + t.h) return t;
+  }
+  return null;
+}
+function sizeCanvas() {
+  var r = $('mapwrap').getBoundingClientRect();
+  var nd = window.devicePixelRatio || 1;
+  var nw = Math.max(50, Math.floor(r.width)), nh = Math.max(50, Math.floor(r.height));
+  if (nw === W && nh === H && nd === dpr) return false;
+  W = nw; H = nh; dpr = nd;
+  [canvas, base, snapC].forEach(function (cv) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); });
+  return true;
+}
+var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function relayout(anim) {
+  sizeCanvas();
+  var oldTiles = tiles;
+  if (anim) { sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.clearRect(0, 0, snapC.width, snapC.height); sctx.drawImage(base, 0, 0); }
+  tiles = layoutAll(view.node, W, H);
+  hoverTile = null;
+  drawBase();
+  if (anim && !reduceMotion && oldTiles.length) transition(oldTiles, anim.from, anim.to);
+  else paint();
+}
+function transition(oldTiles, fromKey, toKey) {
+  var mode = 'fade', r = null, i;
+  for (i = 0; i < oldTiles.length; i++) if (hasKey(oldTiles[i], toKey)) { r = oldTiles[i]; mode = 'in'; break; }
+  if (!r) for (i = 0; i < tiles.length; i++) if (hasKey(tiles[i], fromKey)) { r = tiles[i]; mode = 'out'; break; }
+  var t0 = performance.now(), dur = 230;
+  animating = true;
+  function frame(now) {
+    var t = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - t, 3);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = C.surface; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (mode === 'fade') {
+      ctx.drawImage(snapC, 0, 0);
+      ctx.globalAlpha = e; ctx.drawImage(base, 0, 0);
+    } else {
+      var a = mode === 'in' ? e : 1 - e;      // 0: rect r, 1: full canvas
+      var R = { x: r.x * (1 - a), y: r.y * (1 - a), w: r.w + (W - r.w) * a, h: r.h + (H - r.h) * a };
+      var sx = R.w / r.w, sy = R.h / r.h;
+      var outer = mode === 'in' ? snapC : base, inner = mode === 'in' ? base : snapC;
+      ctx.setTransform(dpr * sx, 0, 0, dpr * sy, dpr * (R.x - r.x * sx), dpr * (R.y - r.y * sy));
+      ctx.drawImage(outer, 0, 0, W, H);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.globalAlpha = mode === 'in' ? Math.min(1, e * 1.6) : Math.max(0, 1 - e * 1.6);
+      ctx.drawImage(inner, R.x, R.y, R.w, R.h);
+    }
+    ctx.globalAlpha = 1;
+    if (t < 1) requestAnimationFrame(frame);
+    else { animating = false; paint(); }
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------- navigation ----------
+function crumbsFor(node) {
+  if (!node) return [{ p: '', n: IS_MAC ? 'This Mac' : 'This computer' }];
+  if (node.crumbs) return node.crumbs;
+  var chain = [], n = node;
+  while (n && !n.crumbs) { chain.unshift({ p: n.key, n: n.n || n.key }); n = n.parent; }
+  return (n ? n.crumbs : [{ p: '', n: IS_MAC ? 'This Mac' : 'This computer' }]).concat(chain);
+}
+function parentPath() {
+  var cr = crumbsFor(view.node);
+  if (cr.length < 2) return null;
+  var i = cr.length - 2;
+  // Skip levels that hold nothing but the folder we came from (the map draws those as one tile).
+  while (i > 1) {
+    var n = store.get(cr[i].p);
+    if (n && n.k === 'd' && n.c && n.c.length === 1 && n.c[0].k === 'd') i--; else break;
+  }
+  return cr[i].p;
+}
+function navigate(path) {
+  if (path === view.path) return;
+  if (!HTTP) { go(path); return; }
+  var h = '#' + enc(path);
+  hashPaths[h] = path;
+  if (location.hash === h || (path === '' && location.hash === '')) go(path);
+  else location.hash = h;
+}
+function zoomOut() { var p = parentPath(); if (p !== null) navigate(p); }
+var goSeq = 0;
+function go(path) {
+  var seq = ++goSeq, from = view.path;
+  view.path = path;
+  if (selKey !== null && path !== '' && selKey.indexOf(path === '/' ? '/' : path + '/') !== 0 && selKey.indexOf(path + '\u0000') !== 0) selKey = null;
+  var node = store.get(path);
+  var shown = false;
+  if (node && node.c && node.c.length && !node.missing) {
+    view.node = node; shown = true;
+    refreshAll({ from: from, to: path });
+  } else {
+    $('busy').style.display = 'block';
+  }
+  fetchTree(path, !fresh(node)).then(function (n) {
+    if (seq !== goSeq) return;
+    $('busy').style.display = 'none';
+    if (n.missing) { navigate(n.near || ''); return; }
+    view.node = n;
+    refreshAll(shown ? null : { from: from, to: path });
+  }).catch(function (e) {
+    if (seq !== goSeq) return;
+    $('busy').style.display = 'none';
+    showOverlay('Could not load this location', String(e.message || e), [{ label: 'Go to the top', act: function () { navigate(''); } }]);
+  });
+}
+function refreshAll(anim) {
+  relayout(anim);
+  renderCrumbs(); renderOverlay(); renderContents(); renderDetail(); renderStatus();
+  schedulePrefetch();
+}
+window.addEventListener('hashchange', function () {
+  if (!HTTP) return;
+  var p = '';
+  if (hashPaths.hasOwnProperty(location.hash)) p = hashPaths[location.hash];
+  else try { p = decodeURIComponent(location.hash.slice(1)); } catch (e) {}
+  if (p !== view.path) go(p);
+});
+
+// ---------- prefetch: load the folders you are most likely to open next ----------
+var prefetchTimer = null, prefetching = 0;
+function schedulePrefetch() {
+  clearTimeout(prefetchTimer);
+  prefetchTimer = setTimeout(function () {
+    if (status.active.length) return;
+    var cands = [];
+    for (var i = 0; i < tiles.length && cands.length < 40; i++) {
+      var t = tiles[i];
+      if (t.depth === 1 && t.node.k === 'd' && !(t.node.fl & (F.DENIED | F.NET | F.MOUNT | F.CLOUD)) &&
+          !fresh(t.node) && t.w * t.h > W * H * 0.04) cands.push(t);
+    }
+    cands.sort(function (a, b) { return b.w * b.h - a.w * a.h; });
+    cands.slice(0, 4).forEach(function (t) { prefetch(t.node.key, true); });
+  }, 350);
+}
+function prefetch(path, redraw) {
+  if (prefetching >= 2 || inflight.has(path) || fresh(store.get(path))) return;
+  prefetching++;
+  var at = view.path;
+  fetchTree(path).then(function () {
+    prefetching--;
+    if (redraw && view.path === at && !animating) { relayout(null); }
+  }, function () { prefetching--; });
+}
+
+// ---------- header, overlay, status ----------
+function renderCrumbs() {
+  var nav = $('crumbs'), cr = crumbsFor(view.node);
+  nav.textContent = '';
+  cr.forEach(function (c, i) {
+    if (i) nav.appendChild(el('span', 'sep', '›'));
+    var b = el('button', '', c.n);
+    b.type = 'button'; b.title = c.p || c.n;
+    if (i === cr.length - 1) b.setAttribute('aria-current', 'location');
+    else b.addEventListener('click', function () { navigate(c.p); });
+    nav.appendChild(b);
+  });
+  $('zoomout').disabled = cr.length < 2;
+  var n = view.node;
+  $('rescan').disabled = !!demo || !n || n.k === 'r' || !!n.stub || n.rstate === 'scanning';
+  $('rescan').textContent = n && n.k === 'v' ? 'Rescan this drive' : 'Rescan this folder';
+  if (HTTP) document.title = (n ? nodeName(n) : 'Disk Map') + ' · Disk Map';
+}
+function showOverlay(title, text, actions) {
+  $('ov-title').textContent = title; $('ov-text').textContent = text;
+  var box = $('ov-actions'); box.textContent = '';
+  (actions || []).forEach(function (a) {
+    var b = el('button', 'btn primary', a.label); b.type = 'button';
+    b.addEventListener('click', a.act); box.appendChild(b);
+  });
+  $('overlay').style.display = 'flex';
+}
+function startScan(path) {
+  call('scan', path).then(function () { pollNow(); }, function (e) { flash(String(e.message || e)); });
+}
+function renderOverlay() {
+  var n = view.node;
+  $('overlay').style.display = 'none';
+  if (!n) return;
+  if (n.stub) {
+    var net = n.vol && n.vol.net, target = n.scan || '/';
+    if (net) showOverlay('Network volume, not scanned',
+      'Files here live on another machine and take no space on this Mac, so it is left out unless you ask. Scanning over the network can be slow.',
+      [{ label: 'Scan it anyway', act: function () { startScan(target); } }]);
+    else if (n.k === 'v') showOverlay('Not scanned yet', 'This volume has not been scanned.',
+      [{ label: 'Scan ' + nodeName(n), act: function () { startScan(target); } }]);
+    else showOverlay('Not scanned yet', 'The drive this folder is on has not been scanned.',
+      [{ label: 'Scan the drive', act: function () { startScan(target); } }]);
+  } else if (n.k !== 'r' && n.full && (!n.c || !n.c.length)) {
+    if (n.fl & F.DENIED) showOverlay('No access', 'macOS blocked access to this folder. See the note in the details panel.', []);
+    else if (n.rstate === 'scanning' || n.st) showOverlay('Scanning…', 'Sizes will appear here as the scan reaches this folder.', []);
+    else showOverlay('Empty folder', 'Nothing in here takes up space.', []);
+  }
+}
+var flashMsg = '', flashUntil = 0;
+function flash(msg) {
+  flashMsg = msg; flashUntil = Date.now() + 3200;
+  renderStatus(); setTimeout(renderStatus, 3300);
+}
+function renderStatus() {
+  var s = $('status'); s.textContent = '';
+  if (Date.now() < flashUntil) { s.appendChild(el('span', '', flashMsg)); return; }
+  var act = status.active || [];
+  if (act.length) {
+    var a = act[0];
+    if (a.sub) { s.appendChild(el('span', '', 'Rescanning ' + a.n + '…')); return; }
+    if (a.used) {
+      var pr = document.createElement('progress');
+      pr.max = 1; pr.value = Math.min(1, a.bytes / a.used); s.appendChild(pr);
+    }
+    s.appendChild(el('span', '', 'Scanning ' + a.n + ': ' + fmtBytes(a.bytes) + ' in ' + fmtNum(a.files) + ' files, ' + Math.round(a.secs) + ' s'));
+    return;
+  }
+  if (status.loading) { s.appendChild(el('span', '', 'Loading the saved scan…')); return; }
+  var n = view.node;
+  if (n && n.at) s.appendChild(el('span', 'muted', 'Scanned ' + rel(n.at) + (n.cached ? ' (saved scan)' : '')));
+}
+function renderLegend() {
+  var lg = $('legend'); lg.textContent = '';
+  function item(color, label, dashed) {
+    var li = el('span', 'li'), sw = el('span', 'sw');
+    sw.style.background = color;
+    if (dashed) sw.style.outline = '1px dashed ' + C.axis;
+    li.appendChild(sw); li.appendChild(el('span', '', label)); lg.appendChild(li);
+  }
+  if (colorMode === 'imp') {
+    item(C.lv.s, 'Safe to clear'); item(C.lv.r, 'Your call'); item(C.lv.c, 'Careful');
+    item(C.lv.k, 'Keep'); item(C.lv.m, 'Mixed or unknown');
+  } else {
+    lg.appendChild(el('span', '', 'Last modified:'));
+    AGES.forEach(function (a, i) { item(C.age[i], a.label); });
+    item(C.lv.m, 'No date');
+  }
+  item(C.surface, 'Free or not scanned', true);
+}
+
+// ---------- side panel ----------
+function swatchColor(n) { return fillFor(n).bg; }
+function renderContents() {
+  var box = $('contents'); box.textContent = '';
+  var n = view.node;
+  if (!n) return;
+  var h = el('h3', 'sec', n.k === 'r' ? 'Drives' : 'Contents');
+  var kids = (n.c || []).slice().sort(function (a, b) { return b.s - a.s; });
+  h.appendChild(el('span', '', n.k === 'r' ? '' : fmtNum(kids.length) + (kids.length === 1 ? ' item, ' : ' items, ') + sizeText(n)));
+  box.appendChild(h);
+  if (!kids.length) { box.appendChild(el('div', 'muted small', 'Nothing to list.')); return; }
+  var ul = el('ul', 'rows'), max = kids[0].s || 1;
+  var selTop = topLevelOf(selKey);
+  kids.slice(0, 250).forEach(function (k) {
+    var li = el('li'), b = el('button', 'row' + (selTop === k.key ? ' sel' : ''));
+    b.type = 'button';
+    var sw = el('span', 'sw'); sw.style.background = swatchColor(k);
+    b.appendChild(sw);
+    b.appendChild(el('span', 'nm', nodeName(k)));
+    var sz = (k.fl & F.DENIED) ? 'no access' : isNet(k) ? 'network' :
+             (k.k === 'v' && k.vol && k.vol.total) ? fmtBytes(k.s) + ' of ' + fmtBytes(k.vol.total) : sizeText(k);
+    b.appendChild(el('span', 'sz', sz));
+    var bar = el('span', 'bar'); bar.style.width = 'calc(' + (100 * k.s / max).toFixed(1) + '% - 30px)';
+    if (k.s > 0) b.appendChild(bar);
+    b.title = nodeName(k);
+    b.addEventListener('click', function () { select(k.key); });
+    b.addEventListener('dblclick', function () { if (zoomable(k)) navigate(k.key); });
+    li.appendChild(b);
+    if (zoomable(k)) {
+      var z = el('button', 'icon', '⤢'); z.type = 'button';
+      z.title = 'Zoom into ' + nodeName(k); z.setAttribute('aria-label', z.title);
+      z.addEventListener('click', function () { navigate(k.key); });
+      li.appendChild(z);
+    }
+    ul.appendChild(li);
+  });
+  box.appendChild(ul);
+  if (kids.length > 250) box.appendChild(el('div', 'muted small', 'Showing the 250 largest of ' + fmtNum(kids.length) + '.'));
+}
+function topLevelOf(key) {
+  if (key === null) return null;
+  var n = store.get(key);
+  while (n && n.parent && n.parent !== view.node) n = n.parent;
+  return n && n.parent === view.node ? n.key : null;
+}
+function richText(parent, text) {
+  String(text).split('`').forEach(function (part, i) {
+    if (i % 2) parent.appendChild(el('code', '', part)); else parent.appendChild(document.createTextNode(part));
+  });
+}
+var infoCache = new Map(), detailSeq = 0, detailSize = null;
+function updateDetailSize() {
+  if (!detailSize) return;
+  var n = detailSize.isView ? view.node : store.get(detailSize.key);
+  if (!n) return;
+  var bs = detailSize.el;
+  bs.textContent = (n.fl & F.DENIED) ? 'Size unknown' : sizeText(n);
+  var parentSize = (!detailSize.isView && view.node) ? view.node.s : 0;
+  if (parentSize > 0 && n.s > 0) bs.appendChild(el('small', '', pct(n.s, parentSize) + ' of this view'));
+}
+function select(key) {
+  selKey = key;
+  paint(); renderContents(); renderDetail();
+}
+function scaleBar(lv) {
+  var wrap = el('div');
+  var sc = el('div', 'scale');
+  ['s', 'r', 'c', 'k'].forEach(function (k) {
+    sc.appendChild(el('div', k === lv ? 'on ' + k : '', LEVELS[k].label));
+  });
+  sc.setAttribute('role', 'img');
+  sc.setAttribute('aria-label', 'Importance: ' + LEVELS[lv].label);
+  wrap.appendChild(sc);
+  var cap = el('div', 'scale-cap');
+  cap.appendChild(el('span', '', 'easier to let go')); cap.appendChild(el('span', '', 'more important to keep'));
+  wrap.appendChild(cap);
+  return wrap;
+}
+function facts(rows) {
+  var dl = el('dl', 'facts');
+  rows.forEach(function (r) { if (r[1]) { dl.appendChild(el('dt', '', r[0])); dl.appendChild(el('dd', '', r[1])); } });
+  return dl;
+}
+function actionBtn(label, fn, primary) {
+  var b = el('button', 'btn' + (primary ? ' primary' : ''), label); b.type = 'button';
+  b.addEventListener('click', fn); return b;
+}
+function renderDetail() {
+  var box = $('detail'), seq = ++detailSeq;
+  var n = selKey !== null ? store.get(selKey) : null;
+  var isView = false;
+  if (!n) { n = view.node; isView = true; }
+  box.textContent = '';
+  if (!n) return;
+  var parentSize = (!isView && view.node) ? view.node.s : 0;
+  var kind = n.k === 'r' ? 'Overview' : n.k === 'v' ? 'Volume' : n.k === 'f' ? 'File' : n.k === 'd' ? 'Folder' : 'Summary';
+  var kindEl = el('div', 'kind', kind + (isView && n.k !== 'r' ? ' (current view)' : ''));
+  box.appendChild(kindEl);
+  box.appendChild(el('h2', '', nodeName(n)));
+  if (n.p) box.appendChild(el('div', 'path', n.p));
+  if (n.k !== 'r') {
+    var bs = el('div', 'bigsize');
+    box.appendChild(bs);
+    detailSize = { el: bs, key: n.key, isView: isView };
+    updateDetailSize();
+  } else detailSize = null;
+  var body = el('div'); box.appendChild(body);
+  var acts = el('div', 'actions');
+
+  if (n.k === 'r') {
+    body.appendChild(el('p', 'why', 'Each tile is sized by the space it takes on disk. Click a tile to see what it is and how safe it is to remove. Double-click to zoom in, down to single files.'));
+    body.appendChild(el('p', 'muted small', 'This tool only reads. Deleting is up to you, in Finder.'));
+    return;
+  }
+  if (n.k === 'e') {
+    body.appendChild(el('p', 'why', 'Space available for new files on ' + nodeName(n.parent) + '.'));
+    body.appendChild(el('p', 'muted small', 'Finder can show a larger number, because it also counts purgeable space that macOS clears on demand.'));
+    return;
+  }
+  if (n.k === 'u') {
+    if (n.sc) body.appendChild(el('p', 'why', 'Space this drive reports as used that has not been scanned yet. It fills in as the scan runs.'));
+    else {
+      body.appendChild(el('p', 'why', 'Space the drive reports as used that the scan could not attribute to files it can see.'));
+      var ul0 = el('ul', 'notes');
+      ['Folders macOS would not let the scan read (Full Disk Access includes them), and system-only areas such as the Spotlight index and saved document versions.',
+       'Local Time Machine snapshots, which macOS removes by itself over time. `tmutil listlocalsnapshots /` lists them.',
+       'File system overhead, and anything that changed since the scan.'].forEach(function (t) {
+        var li = el('li'); richText(li, t); ul0.appendChild(li);
+      });
+      body.appendChild(ul0);
+    }
+    return;
+  }
+  if (n.k === 'o') {
+    body.appendChild(el('p', 'why', 'Items in ' + nodeName(n.parent) + ' that are too small to draw one by one at this zoom level.'));
+    if (zoomable(n.parent) && n.parent !== view.node) {
+      acts.appendChild(actionBtn('Zoom into ' + nodeName(n.parent), function () { navigate(n.parent.key); }, true));
+      body.appendChild(acts);
+    }
+    return;
+  }
+
+  // Real file, folder or volume: show what we know now, then fill in advice from the server.
+  var adv = el('div'); body.appendChild(adv);
+  var fx = el('div'); body.appendChild(fx);
+  function fill(info) {
+    adv.textContent = ''; fx.textContent = '';
+    var lv = info ? info.lv : n.lv;
+    if ('srck'.indexOf(lv) >= 0) adv.appendChild(scaleBar(lv));
+    var L = LEVELS[lv] || LEVELS.u;
+    adv.appendChild(el('div', 'verdict', (L.mark ? L.mark + ' ' : '') + L.label + (info && info.title ? ': ' + info.title : '')));
+    if (info) {
+      if (info.via && info.via !== n.p) adv.appendChild(el('div', 'muted small', 'Based on the folder it is in: ' + info.via_n));
+      adv.appendChild(el('p', 'why', info.why));
+      if (info.how && info.how.length) {
+        adv.appendChild(el('div', 'sub', lv === 'k' ? 'What to do' : 'How to free this space'));
+        var ul = el('ul', 'how');
+        info.how.forEach(function (t) { var li = el('li'); richText(li, t); ul.appendChild(li); });
+        adv.appendChild(ul);
+      }
+      if (info.notes && info.notes.length) {
+        adv.appendChild(el('div', 'sub', 'Worth knowing'));
+        var ul2 = el('ul', 'notes');
+        info.notes.forEach(function (t) { var li = el('li'); richText(li, t); ul2.appendChild(li); });
+        adv.appendChild(ul2);
+      }
+    } else adv.appendChild(el('p', 'muted', 'Looking up details…'));
+    var rows = [];
+    var vol = n.vol;
+    if (vol && vol.total) {
+      rows.push(['Capacity', fmtBytes(vol.total)]);
+      rows.push(['Used', fmtBytes(vol.used) + ' (' + pct(vol.used, vol.total) + ')']);
+      rows.push(['Available', fmtBytes(vol.free)]);
+    }
+    rows.push(['Kind', info ? info.kind : null]);
+    if (info && info.lsize !== undefined && info.lsize !== info.size) rows.push(['File length', fmtBytes(info.lsize)]);
+    var fc = info && info.files !== undefined ? info.files : n.fc, dc = info && info.dirs !== undefined ? info.dirs : n.dc;
+    if (n.k !== 'f' && (fc || dc)) rows.push(['Contains', fmtNum(fc) + (fc === 1 ? ' file in ' : ' files in ') + fmtNum(dc) + (dc === 1 ? ' folder' : ' folders')]);
+    var mt = (info && info.mt) || n.mt;
+    if (mt) rows.push([n.k === 'f' ? 'Modified' : 'Newest change inside', fmtDate(mt) + ' (' + rel(mt) + ')']);
+    if (info && info.bt) rows.push(['Created', fmtDate(info.bt)]);
+    if (info && info.used) rows.push(['Last opened', fmtDate(info.used) + ' (' + rel(info.used) + ')']);
+    if (n.at) rows.push(['Scanned', rel(n.at)]);
+    fx.appendChild(facts(rows));
+    if (info) fx.appendChild(el('p', 'muted small', 'This guidance comes from rules about locations and file types. It cannot know what you have backed up, so treat it as a starting point.'));
+  }
+  var cached = infoCache.get(n.p);
+  fill(cached && cached.gen === serverGen ? cached.data : null);
+  if (!(cached && cached.gen === serverGen)) {
+    var g = serverGen;
+    call('info', n.p).then(function (data) {
+      if (infoCache.size > 400) infoCache.clear();
+      infoCache.set(n.p, { gen: g, data: data });
+      if (seq === detailSeq) fill(data);
+    }, function () { if (seq === detailSeq) fill({ lv: n.lv, why: 'Details are unavailable for this item.', how: [], notes: [] }); });
+  }
+  if (zoomable(n) && n !== view.node) acts.appendChild(actionBtn('Zoom in', function () { navigate(n.key); }, true));
+  if (n.stub || n.rstate === 'none') acts.appendChild(actionBtn('Scan', function () { startScan(n.scan || n.p); }));
+  if (IS_MAC && !demo && !(n.fl & F.NET)) acts.appendChild(actionBtn('Reveal in Finder', function () {
+    call('reveal', n.p).then(function () { flash('Shown in Finder'); }, function (e) { flash(String(e.message || e)); });
+  }));
+  acts.appendChild(actionBtn('Copy path', function () {
+    copyText(n.p).then(
+      function () { flash('Path copied'); }, function () { flash('Could not copy'); });
+  }));
+  var inList = shortlist.some(function (x) { return x.p === n.p; });
+  acts.appendChild(actionBtn(inList ? 'Remove from shortlist' : 'Add to shortlist', function () {
+    if (inList) shortlist = shortlist.filter(function (x) { return x.p !== n.p; });
+    else shortlist.push({ p: n.p, n: nodeName(n), s: n.s, lv: n.lv });
+    saveShortlist(); renderShortlist(); renderDetail();
+  }));
+  body.appendChild(acts);
+}
+
+// ---------- shortlist: things you are considering deleting ----------
+var shortlist = [];
+try { shortlist = JSON.parse(localStorage.getItem('diskmap.shortlist') || '[]') || []; } catch (e) { shortlist = []; }
+function saveShortlist() { try { localStorage.setItem('diskmap.shortlist', JSON.stringify(shortlist)); } catch (e) {} }
+function renderShortlist() {
+  var box = $('shortlist'); box.textContent = '';
+  var h = el('h3', 'sec', 'Shortlist'); h.appendChild(el('span', '', 'candidates you are considering'));
+  box.appendChild(h);
+  if (!shortlist.length) {
+    box.appendChild(el('div', 'muted small', 'Add items here while you look around to see how much space they would free together. Nothing is deleted.'));
+    return;
+  }
+  var ul = el('ul', 'rows'), total = 0;
+  shortlist.forEach(function (it) {
+    var nested = shortlist.some(function (o) { return o !== it && (it.p.indexOf(o.p === '/' ? '/' : o.p + '/') === 0); });
+    if (!nested) total += it.s;
+    var li = el('li'), b = el('button', 'row'); b.type = 'button';
+    var sw = el('span', 'sw'); sw.style.background = C.lv[it.lv] || C.lv.m; b.appendChild(sw);
+    b.appendChild(el('span', 'nm', it.n));
+    b.appendChild(el('span', 'sz', fmtBytes(it.s) + (nested ? ' (counted above)' : '')));
+    b.title = it.p;
+    b.addEventListener('click', function () {
+      var parent = it.p.replace(/\/[^\/]*$/, '') || '/';
+      selKey = it.p;
+      if (store.has(it.p) && tiles.some(function (t) { return hasKey(t, it.p); })) select(it.p);
+      else { navigate(parent); renderDetail(); }
+    });
+    li.appendChild(b);
+    var x = el('button', 'icon', '✕'); x.type = 'button'; x.title = 'Remove from shortlist'; x.setAttribute('aria-label', x.title + ': ' + it.n);
+    x.addEventListener('click', function () {
+      shortlist = shortlist.filter(function (o) { return o !== it; });
+      saveShortlist(); renderShortlist(); renderDetail();
+    });
+    li.appendChild(x); ul.appendChild(li);
+  });
+  box.appendChild(ul);
+  var t = el('div', 'total'); t.appendChild(el('span', '', 'Would free about')); t.appendChild(el('span', '', fmtBytes(total)));
+  box.appendChild(t);
+  var acts = el('div', 'actions');
+  acts.appendChild(actionBtn('Copy paths', function () {
+    var text = shortlist.map(function (x) { return x.p; }).join('\n');
+    copyText(text).then(
+      function () { flash('Paths copied'); }, function () { flash('Could not copy'); });
+  }));
+  acts.appendChild(actionBtn('Clear list', function () { shortlist = []; saveShortlist(); renderShortlist(); renderDetail(); }));
+  box.appendChild(acts);
+}
+
+// ---------- map interaction ----------
+var tip = $('tip');
+function pos(e) { var r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+var hoverTimer = null;
+canvas.addEventListener('mousemove', function (e) {
+  if (animating) return;
+  var p = pos(e), t = tileAt(p.x, p.y);
+  if (t !== hoverTile) {
+    hoverTile = t; paint();
+    clearTimeout(hoverTimer);
+    if (t && t.node.k === 'd' && !t.node.stub) {
+      var top = t.node;
+      while (top.parent && top.parent !== view.node) top = top.parent;
+      hoverTimer = setTimeout(function () { if (!status.active.length) prefetch(top.key, false); }, 140);
+    }
+  }
+  if (!t) { tip.style.display = 'none'; return; }
+  var n = t.node;
+  tip.textContent = '';
+  tip.appendChild(el('div', 'v', (n.fl & F.DENIED) ? 'Size unknown' : isNet(n) ? 'Network volume' : sizeText(n)));
+  tip.appendChild(el('div', 'n', tileLabel(t)));
+  var meta = [];
+  if (view.node && view.node.s > 0 && n.s > 0) meta.push(pct(n.s, view.node.s) + ' of this view');
+  if (colorMode === 'age') { if (n.mt) meta.push('changed ' + rel(n.mt)); }
+  else if (n.k === 'd' || n.k === 'f') meta.push((LEVELS[n.lv] || LEVELS.u).label);
+  if (meta.length) tip.appendChild(el('div', 'm', meta.join(' · ')));
+  tip.style.display = 'block';
+  var tw = tip.offsetWidth, th = tip.offsetHeight;
+  var x = p.x + 14, y = p.y + 16;
+  if (x + tw > W - 4) x = p.x - tw - 10;
+  if (y + th > H - 4) y = p.y - th - 10;
+  tip.style.left = Math.max(4, x) + 'px'; tip.style.top = Math.max(4, y) + 'px';
+});
+canvas.addEventListener('mouseleave', function () { hoverTile = null; tip.style.display = 'none'; clearTimeout(hoverTimer); paint(); });
+canvas.addEventListener('click', function (e) {
+  var p = pos(e), t = tileAt(p.x, p.y);
+  select(t ? t.node.key : null);
+});
+canvas.addEventListener('dblclick', function (e) {
+  var p = pos(e), t = tileAt(p.x, p.y);
+  if (!t) return;
+  var n = t.node;
+  if (!zoomable(n)) n = n.parent;
+  if (zoomable(n) && n !== view.node) { tip.style.display = 'none'; navigate(n.key); }
+});
+var wheelAcc = 0, wheelLock = 0;
+canvas.addEventListener('wheel', function (e) {
+  e.preventDefault();
+  var now = performance.now();
+  if (now < wheelLock) return;
+  wheelAcc += e.deltaY;
+  if (Math.abs(wheelAcc) < 70) return;
+  var dir = wheelAcc; wheelAcc = 0; wheelLock = now + 650;
+  if (dir > 0) { zoomOut(); return; }
+  var p = pos(e), n = null;
+  for (var i = 0; i < tiles.length; i++) {
+    var t = tiles[i];
+    if (t.depth === 1 && p.x >= t.x && p.x < t.x + t.w && p.y >= t.y && p.y < t.y + t.h) { n = t.node; break; }
+  }
+  if (zoomable(n)) { tip.style.display = 'none'; navigate(n.key); }
+}, { passive: false });
+function siblings(n) {
+  return n && n.parent && n.parent.c ? n.parent.c.slice().sort(function (a, b) { return b.s - a.s; }) : [];
+}
+canvas.addEventListener('keydown', function (e) {
+  var n = selKey !== null ? store.get(selKey) : null, s, i;
+  if (e.key === 'Escape' || e.key === 'Backspace' || e.key === '-') { zoomOut(); e.preventDefault(); return; }
+  if (e.key === 'Enter' || e.key === '+' || e.key === '=') {
+    if (n && !zoomable(n)) n = n.parent;
+    if (zoomable(n) && n !== view.node) navigate(n.key);
+    e.preventDefault(); return;
+  }
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    if (!n) { s = siblings((view.node && view.node.c || [])[0]); if (s.length) select(s[0].key); }
+    else { s = siblings(n); i = s.indexOf(n) + (e.key === 'ArrowRight' ? 1 : -1); if (s[i]) select(s[i].key); }
+    e.preventDefault();
+  } else if (e.key === 'ArrowDown') {
+    var from = n || view.node;
+    if (from && from.c && from.c.length) { s = from.c.slice().sort(function (a, b) { return b.s - a.s; }); select(s[0].key); }
+    e.preventDefault();
+  } else if (e.key === 'ArrowUp') {
+    if (n && n.parent && n.parent !== view.node) select(n.parent.key); else select(null);
+    e.preventDefault();
+  }
+});
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Escape' || e.target === canvas) return;
+  var tag = (e.target && e.target.tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  zoomOut();
+});
+$('zoomout').addEventListener('click', zoomOut);
+$('rescan').addEventListener('click', function () { if (view.node && view.node.p) startScan(view.node.p); });
+Array.prototype.forEach.call(document.querySelectorAll('.seg button'), function (b) {
+  b.addEventListener('click', function () {
+    colorMode = b.getAttribute('data-mode');
+    Array.prototype.forEach.call(document.querySelectorAll('.seg button'), function (o) {
+      o.setAttribute('aria-pressed', o === b ? 'true' : 'false');
+    });
+    renderLegend(); drawBase(); paint(); renderContents();
+  });
+});
+var resizeTimer = null;
+new ResizeObserver(function () {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(function () { if (sizeCanvas()) relayout(null); }, 60);
+}).observe($('mapwrap'));
+if (window.matchMedia) {
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+  var onScheme = function () { readColors(); renderLegend(); drawBase(); paint(); renderContents(); renderShortlist(); };
+  if (mq.addEventListener) mq.addEventListener('change', onScheme); else if (mq.addListener) mq.addListener(onScheme);
+  if (window.MutationObserver) new MutationObserver(onScheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+}
+
+// ---------- keep in step with the scanner ----------
+var pollTimer = null;
+function pollNow() { clearTimeout(pollTimer); poll(); }
+function poll() {
+  call('status').then(function (s) {
+    var wasActive = status.active.length > 0;
+    status = s;
+    if (s.gen > serverGen) serverGen = s.gen;
+    var genChanged = !!view.node && view.node.gen !== serverGen;
+    renderStatus();
+    if (genChanged || s.active.length || wasActive) {
+      var path = view.path, seq = goSeq;
+      fetchTree(path, true).then(function (n) {
+        if (seq !== goSeq || view.path !== path) return;
+        if (n.missing) { navigate(n.near || ''); return; }
+        view.node = n;
+        if (!animating) { relayout(null); renderCrumbs(); renderOverlay(); renderContents(); renderStatus(); }
+        if (genChanged) renderDetail(); else updateDetailSize();
+        if (!s.active.length) schedulePrefetch();
+      }, function () {});
+    }
+  }, function () {
+    if (HTTP) $('status').textContent = 'Disk Map has stopped. Start it again to continue.';
+  }).then(function () {
+    if (demo || (!HTTP && !engine)) return;
+    pollTimer = setTimeout(poll, status.active.length || status.loading ? 900 : 4000);
+  });
+}
+
+// ---------- start ----------
+readColors();
+renderLegend();
+renderShortlist();
+sizeCanvas();
+function begin(path) {
+  call('status').then(function (s) { status = s; serverGen = s.gen; }, function () {}).then(function () {
+    view.path = null;
+    go(path);
+    if (!demo) pollTimer = setTimeout(poll, 700);
+  });
+}
+function gate(title, text, actions) {
+  $('gate-title').textContent = title; $('gate-text').textContent = text || '';
+  var box = $('gate-actions'); box.textContent = '';
+  (actions || []).forEach(function (a) { box.appendChild(actionBtn(a.label, a.act, true)); });
+  $('gate').style.display = 'flex';
+}
+function ungate() { $('gate').style.display = 'none'; }
+function drawIcon() {
+  var cv = document.createElement('canvas'); cv.width = cv.height = 256;
+  var c = cv.getContext('2d');
+  function rr(x, y, w, h, r, fill) {
+    c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); c.fillStyle = fill; c.fill();
+  }
+  rr(20, 20, 216, 216, 48, '#191919');
+  rr(40, 40, 104, 176, 12, '#257de0');
+  rr(152, 40, 64, 84, 12, '#00b894');
+  rr(152, 132, 64, 38, 10, '#f47230');
+  rr(152, 178, 28, 38, 8, '#8a8a8a');
+  rr(188, 178, 28, 38, 8, '#cfcfcf');
+  return cv.toDataURL('image/png');
+}
+var WINDOW_OPTIONS = { width: 1280, height: 820, minWidth: 860, minHeight: 560 };
+function engineGone(msg) {
+  clearTimeout(pollTimer);
+  gate('The scanner stopped', msg, [{ label: 'Start it again', act: launchEngine }]);
+}
+function launchEngine() {
+  gate('Starting the scanner…', 'Saved results from the last scan load first, so this is usually quick.');
+  var home, script;
+  desktop.os.homedir().then(function (h) {
+    home = h.replace(/\/$/, '');
+    var dir = home + '/Library/Application Support/Disk Map';
+    script = dir + '/engine.py';
+    return desktop.fs.mkdir(dir, { recursive: true }).then(function () {
+      return desktop.fs.writeFile(script, $('engine-src').textContent, 'utf8');
+    });
+  }).then(function () {
+    var candidates = [home + '/.homebrew/bin/python3', '/opt/homebrew/bin/python3', '/usr/local/bin/python3', '/usr/bin/python3'];
+    var errors = [];
+    function attempt(i) {
+      if (i >= candidates.length) {
+        throw new Error('Disk Map needs Python 3, which it could not start.\n' +
+          'Apple\'s Command Line Tools provide it: run xcode-select --install in Terminal, then start Disk Map again.\n\n' + errors.join('\n'));
+      }
+      return desktop.fs.exists(candidates[i]).then(function (yes) {
+        if (!yes) return attempt(i + 1);
+        return startEngine(candidates[i], script).catch(function (e) {
+          errors.push(candidates[i] + ': ' + String((e && e.message) || e).slice(0, 300));
+          return attempt(i + 1);
+        });
+      });
+    }
+    return attempt(0);
+  }).then(function (conn) {
+    engine = conn; IS_MAC = conn.mac;
+    store.clear(); infoCache.clear(); view.node = null; serverGen = 0;
+    ungate();
+    begin('');
+  }).catch(function (e) {
+    gate('Disk Map could not start', String((e && e.message) || e), [{ label: 'Try again', act: launchEngine }]);
+  });
+}
+var accessTries = 0;
+function checkAccess() {
+  desktop.permissions.state('full-access').then(function (st) {
+    if (st === 'granted') { launchEngine(); return; }
+    if (st === 'prompt') {
+      gate('Let Disk Map read your drives',
+        'To measure every folder, Disk Map needs full access to this Mac. It only reads: it never deletes, moves or changes a file.',
+        [{ label: 'Allow and start scanning', act: function () {
+          desktop.permissions.request(['full-access']).then(checkAccess, checkAccess);
+        } }]);
+    } else if (st === 'denied') {
+      gate('Access is turned off', 'Disk Map cannot scan without full access. You can turn it on in the app\'s permissions.',
+        [{ label: 'Open permissions', act: function () { desktop.permissions.manage().then(checkAccess, checkAccess); } }]);
+    } else if (accessTries++ < 5) {
+      gate('Getting ready…', '');
+      setTimeout(checkAccess, 1500);      // the app may still be signing in
+    } else {
+      accessTries = 0;
+      gate('Full access is not available here',
+        'This window cannot be given full access right now, so Disk Map cannot scan. Check that the Claude desktop app is signed in to the account that owns this artifact.',
+        [{ label: 'Try again', act: checkAccess }]);
+    }
+  }, function (e) {
+    gate('Disk Map could not start', String((e && e.message) || e), [{ label: 'Try again', act: checkAccess }]);
+  });
+}
+function startDemo(d) {
+  var raw = null;
+  try { raw = JSON.parse($('demo-data').textContent); } catch (e) {}
+  var text = 'Disk Map scans your drives only as an installed desktop app.';
+  var box = $('banner-actions'); box.textContent = '';
+  if (raw && raw.tree) {
+    demo = { root: raw.root, rules: raw.rules, index: {} };
+    (function walk(n, p) {
+      n.p = p; demo.index[p] = n;
+      (n.c || []).forEach(function (c) { if (c.k === 'd') walk(c, p + '/' + c.n); else { c.p = p + '/' + c.n; if (c.k === 'f') demo.index[c.p] = c; } });
+    })(raw.tree, raw.root);
+    IS_MAC = true;
+    text = 'You are looking at example data. ' + text;
+  }
+  $('banner-text').textContent = text;
+  $('banner').style.display = 'flex';
+  var fallback = function () { $('banner-text').textContent = text + ' It can be installed from the Claude desktop app.'; };
+  if (d && d.install) {
+    d.install.state().then(function (st) {
+      if (st === 'available') {
+        box.appendChild(actionBtn('Install as app', function () { d.install.request().catch(function () {}); }, true));
+      } else if (st === 'installed') {
+        $('banner-text').textContent = text + ' It is already installed on this computer: open Disk Map from your apps.';
+      } else fallback();
+    }, fallback);
+  } else fallback();
+  if (demo) begin(demo.root);
+  else gate('Disk Map runs as a desktop app', text + ' It can be installed from the Claude desktop app.');
+}
+function startApp(d) {
+  desktop = d;
+  d.app.dock.setIcon(drawIcon()).catch(function () {});
+  d.window.getOptions().then(function (o) {
+    if (JSON.stringify(o.options || {}) !== JSON.stringify(WINDOW_OPTIONS)) return d.window.setOptions(WINDOW_OPTIONS);
+  }).catch(function () {});
+  d.os.platform().then(function (pf) {
+    if (pf !== 'darwin') { gate('Disk Map is built for macOS', 'This app reads Mac drives and does not support this system yet.'); return; }
+    checkAccess();
+  }, checkAccess);
+}
+if (HTTP) {
+  var startPath = '';
+  try { startPath = decodeURIComponent(location.hash.slice(1)); } catch (e) {}
+  begin(startPath);
+} else if (window.claude && typeof window.claude.use === 'function') {
+  window.claude.use('desktop').then(function (d) {
+    if (d && d.fs) startApp(d); else startDemo(d);
+  }, function () { startDemo(null); });
+} else {
+  startDemo(null);
+}
+})();
+</script>
+</body>
+</html>
