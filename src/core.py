@@ -229,6 +229,32 @@ class _FdScandir(object):
             self.fd = -1
 
 
+def ok_name(name):
+    """A plausible single file name: a cache file edited by another program must not turn a
+    name into a path."""
+    return isinstance(name, str) and name not in ('', '.', '..') and '/' not in name and '\x00' not in name
+
+
+def private_dir(path):
+    """Make path a folder only this user can read, even if it already existed."""
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    os.chmod(path, 0o700)
+
+
+def open_private(path):
+    """Create a new file that is 0600 from the first byte (no window with umask permissions)."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    return os.fdopen(fd, 'wb')
+
+
+def drop_stale(path):
+    """Remove a temp file of ours left by a crash, so open_private can create it again."""
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
 def clean_path(p):
     """normpath that also folds a leading '//', which POSIX normpath keeps and which would
     otherwise slip past the mount table and loop forever in parent walks."""
@@ -1149,15 +1175,15 @@ class Scanner(object):
             return [n.name, n.flags, n.size, n.files, n.dirs, n.mtime, n.fsize, n.fcount,
                     n.big or 0, [dump(c) for c in ch.values()] if ch else 0]
         try:
-            os.makedirs(self.cache_dir, mode=0o700, exist_ok=True)
+            private_dir(self.cache_dir)
             data = {'v': CACHE_V, 'path': r.path, 'kind': r.kind, 'scanned_at': r.scanned_at,
                     'duration': r.duration, 'tree': dump(r.node)}
             raw = json.dumps(data, separators=(',', ':')).encode('ascii')
             fn = self._cache_file(r.path)
             tmp = fn + '.tmp%d' % threading.get_ident()
-            with gzip.open(tmp, 'wb', compresslevel=3) as fh:
+            drop_stale(tmp)
+            with open_private(tmp) as raw_fh, gzip.GzipFile(fileobj=raw_fh, mode='wb', compresslevel=3) as fh:
                 fh.write(raw)
-            os.chmod(tmp, 0o600)
             os.replace(tmp, fn)
         except Exception as exc:
             sys.stderr.write('diskmap: could not save cache: %r\n' % (exc,))
@@ -1167,9 +1193,13 @@ class Scanner(object):
         loaded = set()
 
         def build(a, parent):
+            if parent is not None and not ok_name(a[0]):
+                raise ValueError('bad name in cache')
             n = Node(a[0], parent)
             n.flags, n.size, n.files, n.dirs, n.mtime, n.fsize, n.fcount = a[1:8]
             n.big = [tuple(b) for b in a[8]] if a[8] else None
+            if n.big and not all(ok_name(b[0]) for b in n.big):
+                raise ValueError('bad name in cache')
             if a[9]:
                 n.children = dict((c[0], build(c, n)) for c in a[9])
             n.state = DONE
@@ -1509,7 +1539,7 @@ def main():
         # start (clicking the Dock icon again) just shows the map that is already running.
         import fcntl
         sdir = state_dir()
-        os.makedirs(sdir, mode=0o700, exist_ok=True)
+        private_dir(sdir)
         state_file = os.path.join(sdir, 'app.json')
         log_dir = os.path.join(os.path.expanduser('~'), 'Library', 'Logs') if IS_MAC else sdir
         try:
@@ -1597,9 +1627,9 @@ def main():
 
     if state_file:
         tmp = state_file + '.tmp'
-        with open(tmp, 'w') as fh:
-            json.dump({'port': port, 'token': token, 'url': url, 'pid': os.getpid()}, fh)
-        os.chmod(tmp, 0o600)
+        drop_stale(tmp)
+        with open_private(tmp) as fh:
+            fh.write(json.dumps({'port': port, 'token': token, 'url': url, 'pid': os.getpid()}).encode('ascii'))
         os.replace(tmp, state_file)
     if args.parent:
         def watch_parent():      # the app that started us has quit: stop too

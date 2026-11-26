@@ -518,5 +518,24 @@ class CacheTest(ScannerCase):
             self.assertEqual(sc.load_caches([self.root]), set())
 
 
+    def test_cache_folder_is_made_private_and_bad_names_are_rejected(self):
+        import gzip, json
+        write(self.root + '/a/x.bin', 4 * KB)
+        cache = os.path.join(self.tmp, 'cache')
+        os.makedirs(cache, mode=0o755)
+        os.chmod(cache, 0o755)
+        sc, r = self.scan(self.scanner(cache))
+        sc.save_cache(r)
+        self.assertEqual(stat.S_IMODE(os.stat(cache).st_mode), 0o700)
+        fn = sc._cache_file(self.root)
+        with gzip.open(fn, 'rb') as fh:
+            data = json.loads(fh.read().decode('ascii'))
+        data['tree'][9][0][0] = '/nope'          # a child name that is really a path
+        with gzip.open(fn, 'wb') as fh:
+            fh.write(json.dumps(data).encode('ascii'))
+        with mock.patch.object(sys, 'stderr'):
+            self.assertEqual(self.scanner(cache).load_caches([self.root]), set())
+
+
 if __name__ == '__main__':
     unittest.main()
