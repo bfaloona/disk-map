@@ -12,7 +12,9 @@ Read-only by design. This file is the project memory; keep it current.
 - `src/demo.json`: example data the artifact shows before it is installed. Regenerate with `tools/gen_demo.py`.
 - `build.py`: writes `dist/diskmap.py` (standalone) and `dist/app/index.html` (artifact page, which
   embeds the scanner as its engine). `dist/` is not committed.
-- `tests/`: Playwright smoke tests. Run all three after any change (see README).
+- `tests/`: standard-library unit tests (`test_*.py`, `python3 -m unittest discover -s tests -t tests`)
+  and three Playwright smoke tests (`*_smoke.py`). Run all of them after any change (see README).
+  Expected-failure tests record known app problems; remove the marker when one is fixed.
 
 ## How the pieces talk
 

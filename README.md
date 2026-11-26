@@ -38,6 +38,23 @@ For a complete scan on macOS, give the app that runs Disk Map Full Disk Access
 
 ## Tests
 
+Unit tests use only the standard library. They build `dist/` first, work in temp folders, and
+take a few seconds:
+
+```
+python3 -m unittest discover -s tests -t tests
+```
+
+| File | Covers |
+|---|---|
+| `test_advice.py` | Advice rules by location, name, package and extension; the rule tables themselves |
+| `test_scanner.py` | Allocated sizes, hard links, symlinks, unreadable folders, mount points, cloud-only folders, rescans, cache |
+| `test_server.py` | Web server token and Host checks; the stdio engine's message format |
+| `test_build.py` | Build outputs, the build's own safety checks, no HTML-parsing calls in `ui.html` |
+
+Tests marked as expected failures record known problems in the app. When one starts passing, the
+problem is fixed: remove the marker.
+
 Smoke tests drive the real page in a browser with Playwright:
 
 ```
@@ -49,6 +66,11 @@ cd tests && python3 standalone_smoke.py && python3 demo_smoke.py && python3 app_
 
 Set `DISKMAP_TEST_HOME` to use another location (it must be under `/home/<name>` or `/Users/<name>`),
 and `CHROME` to point at a specific browser.
+
+On macOS, `/home` cannot hold folders and a new folder in `/Users` needs an admin password, so
+`standalone_smoke.py` and `app_mode_smoke.py` need that setup first. `demo_smoke.py` needs no test
+home. `make_test_home.py` uses `mkfile -n` on macOS, which makes sparse files: they take almost no
+disk space, so the map shows them as tiny.
 
 ## Status
 
