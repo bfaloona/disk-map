@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement or new advice rule.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check [ROADMAP.md](https://github.com/bfaloona/disk-map/blob/main/ROADMAP.md) first. Disk Map stays read-only, so requests to
+        delete or move files from inside the app will be closed.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: For a new advice rule, name the folder or file type, what it is, and a source for how to clear it safely.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Other options you considered

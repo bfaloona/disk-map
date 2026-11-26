@@ -1,5 +1,8 @@
 # Disk Map
 
+[![CI](https://github.com/bfaloona/disk-map/actions/workflows/ci.yml/badge.svg)](https://github.com/bfaloona/disk-map/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 An interactive treemap of where a Mac's storage goes. Zoom from drives down to single files,
 click anything for details and plain advice on how safe it is to remove. It only reads: it never
 deletes, moves or changes a file. The one action it takes is Reveal in Finder.
@@ -75,4 +78,14 @@ this way used 16 KB, so the large test files likely show as tiny tiles.
 ## Status
 
 Built and tested on Linux, including the macOS-specific logic against a simulated mount table and a
-simulated desktop app. Not yet verified on a real Mac: see "Not verified on macOS" in `CLAUDE.md`.
+simulated desktop app. Not yet verified on a real Mac: see "Not verified on macOS" in `AGENTS.md`.
+
+## Contributing
+
+Bug reports from real Macs are the most useful help right now. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+for setup and the commit checks, [`ROADMAP.md`](ROADMAP.md) for what is planned, and
+[`SECURITY.md`](SECURITY.md) to report a vulnerability. Coding agents read [`AGENTS.md`](AGENTS.md).
+
+## License
+
+[MIT](LICENSE)

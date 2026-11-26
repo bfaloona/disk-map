@@ -1,0 +1,61 @@
+name: Bug report
+description: Something in Disk Map is wrong or broken.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Before you paste output or screenshots, remove anything personal:
+        your user name in paths, file names, network volume names. Security problems go to
+        the Security tab (Report a vulnerability), not here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what you saw instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `python3 dist/diskmap.py ~/Downloads`
+        2. Double-click a folder
+        3. ...
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How you ran it
+      options:
+        - Standalone script in a browser
+        - Desktop app (Claude artifact)
+        - Demo page
+        - Launcher from --install-app
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and chip
+      placeholder: macOS 26.1, Apple M2
+  - type: input
+    id: python
+    attributes:
+      label: Python version (python3 --version)
+  - type: input
+    id: commit
+    attributes:
+      label: Disk Map commit or download date
+  - type: checkboxes
+    id: fda
+    attributes:
+      label: Full Disk Access
+      options:
+        - label: The app or terminal that runs Disk Map has Full Disk Access
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines
+      description: Relevant lines from ~/Library/Logs/diskmap.log, with personal names removed.
+      render: text
