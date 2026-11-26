@@ -143,13 +143,14 @@ Done when: the workflow runs green on both runners and its JSON is attached to t
 
 - Add `PLATFORM = 'mac' | 'windows' | 'linux'` next to `IS_MAC`. Keep `IS_MAC` as `PLATFORM == 'mac'` so existing code does not change in this step.
 - Add `IS_WIN`.
-- Add `ipath = posixpath` and use it for every `dirname`, `basename`, `split` and `normpath` on an internal path, in `src/core.py` and `src/advice.py`. `os.path` stays only for paths that come from the OS (`expanduser`, `realpath`, `abspath`).
+- Add an `ipath` namespace with `dirname`, `basename`, `split` and `normpath` for internal paths, and use it everywhere in `src/core.py` and `src/advice.py`. A plain `posixpath` alias does not work: it turns `normpath('C:/')` and `dirname('C:/folder')` into the drive-relative `C:`, which breaks root checks and loops forever in parent walks. Each function wraps `posixpath` and puts the slash back when the result is a bare drive (`^[A-Za-z]:$`). On macOS and Linux they behave exactly as `posixpath`. `os.path` stays only for paths that come from the OS (`expanduser`, `realpath`, `abspath`).
+- `clean_path`: on Windows, do not prepend `/` (that turns `C:/folder` into `/C:/folder`). Use `ipath.normpath` instead. `Scanner.request_scan` and S3's `valid_path` both go through it.
 - Add `to_internal(native)`: on Windows, replace `\` with `/` and upper-case the drive letter. On macOS and Linux it returns its input.
 - Add `system_root()`: `'/'` on macOS and Linux, `'C:/'` (from the `SystemDrive` environment variable, default `C:`) on Windows.
 - Replace every hard-coded `'/'` root: `warm` and `main` (default scan), `volumes` (first entry), `request_scan` (empty path), `crumbs` (start), `tree_payload` (fallback scan target), the root checks in `_special_for` and `_container_of`, and the loop ends in `find_rule`, `_dir_rule` and `_governing_ancestor` in `src/advice.py`.
 - `main`: pass pinned folders through `to_internal` after `realpath`.
 
-Done when: all unit tests pass on Linux and macOS, and a new test runs the helpers with `PLATFORM` forced to `'windows'` (the helpers take the platform as a parameter with the module value as default, so the test needs no Windows machine).
+Done when: all unit tests pass on Linux and macOS, and a new test runs the helpers with `PLATFORM` forced to `'windows'` (the helpers take the platform as a parameter with the module value as default, so the test needs no Windows machine). The test covers `ipath.normpath('C:/')`, `ipath.dirname('C:/folder')` and `ipath.dirname('C:/')` (all `'C:/'`), and `clean_path('C:/a/../b')` (`'C:/b'`).
 
 #### S3. Request path validation in one place
 
@@ -191,13 +192,14 @@ All three changes sit in `_list_dir`, `list_files` and `info`, behind three plat
   - Storage: in `_list_dir`, a folder entry that is a link becomes a child `Node` with `F_LINK` set, state `DONE`, size 0, and is not added to `todo`. That follows the existing pattern for mount points and cloud folders. `_expand` already skips nodes with `F_MOUNT`, `F_DENIED` or `F_CLOUD`; add `F_LINK`. `list_files` skips entries where `is_dir()` is true, so a junction never appears there twice.
   - Today `F_LINK` (32) is only set on files in `list_files`, and `src/ui.html` defines `F.LINK` but never reads it. S8 adds the link display.
   - A reparse point that is not a name surrogate (for example deduplication or cloud tags) is not a link. It falls through to the cloud check.
+  - Advice must not touch a link's target either. `_ndict` calls `level_of`, and rules with a check function look on disk: `_is_venv` tests for `pyvenv.cfg` inside the folder, so a link named `.venv` that points to a dead share would hang a `tree` or `info` request. Add a `probe` argument to `find_rule` and `level_of` (default true). `_ndict` and `info` pass false for nodes with `F_LINK` or `F_CLOUD`, and a rule with a check function then does not match. This also changes macOS for a cloud folder whose rule has a check, which is the safer result there too.
 - `is_cloud_entry(st)`:
   - macOS: `st_flags & SF_DATALESS` (unchanged).
   - Windows: RECALL_ON_DATA_ACCESS, RECALL_ON_OPEN or OFFLINE set. A folder with one of them gets `F_CLOUD` and is never listed. That matches today's treatment of a dataless folder.
 - `scandir_nofollow` on Windows: check `os.lstat(path)` with `is_link_entry` before listing, and refuse a link. A link swapped in between the check and the listing still gets through. The proof of concept accepts that gap. Name it in the S5 commit body; a check on an open folder handle is a later improvement.
 - Hard links: leave the `st_nlink > 1` branch unchanged. On Windows it never fires (`st_nlink` is 0), so hard links count once per link.
 
-Done when: on both runners, the S10 check shows `C:/Documents and Settings` as a link tile of size 0, the symlink to `\\diskmap-test.invalid\share` as a link tile, and a fixture compressed file with a size below its logical size.
+Done when: a unit test scans a fixture with a directory symlink named `.venv` and fails if `os.path.lexists` or any stat is called on a path inside it; on both runners, the S10 check shows `C:/Documents and Settings` as a link tile of size 0, the symlink to `\\diskmap-test.invalid\share` as a link tile, and a fixture compressed file with a size below its logical size.
 
 #### S6. Details, breadcrumbs, folders for state, and features that refuse
 
@@ -230,10 +232,10 @@ Done when: a unit test that runs only on Windows starts two `Server` objects on 
 - APP mode handshake (`serve_stdio`): add `'platform': PLATFORM` and keep `'mac'`. The page reads `conn.platform` when present.
 - Wording from a small table keyed by platform: "This Mac" or "This PC", "in Finder" or "in File Explorer". The Finder purgeable-space note shows on macOS only. The Reveal button shows on macOS only (already gated by `IS_MAC`).
 - Display: paths stay forward-slash keys. Text shown to the user converts `/` to `\` on Windows in one function (`showPath`). `fitTail` splits the converted text on the platform separator.
-- Link display: a tile with `F.LINK` gets a link label in the map and a detail panel note ("This is a link to another folder. Disk Map does not follow links, so its contents are counted where they really are, or not at all if that is another drive."). Use the existing gray for "mixed"; no new hue (AGENTS.md palette rule).
+- Link display: a tile with `F.LINK` gets a link label in the map and a detail panel note ("This is a link to another folder. Disk Map does not follow links, so its contents are counted where they really are, or not at all if that is another drive."). Use the existing gray for "mixed"; no new hue (AGENTS.md palette rule). A label alone does not draw the tile: `kidsOf` in `src/ui.html` gives zero-size items a minimum weight only when they carry DENIED, NET, MOUNT or CLOUD. Add LINK to that list. Like those flags, this applies only at the top level of the view, which `_kids` builds from a live listing with no minimum size, so zero-size links already reach the page there. Below the top level, links fold into "other" with denied and cloud folders; the plan keeps that.
 - The demo stays macOS data with `PLATFORM = 'mac'`.
 
-Done when: `tests/test_build.py` checks the new marker, and the S10 check finds `This PC` and `C:\` in the served page text for the root and a breadcrumb.
+Done when: `tests/test_build.py` checks the new marker, and the S10 check finds `var PLATFORM = 'windows'` in the served page and `C:/` as the first breadcrumb in the `/api/tree` response. S10 does not run JavaScript, so the rendered wording ("This PC", `C:\` in breadcrumbs) is checked by eye on the real PC in M2b and goes in the "Not verified on Windows" list.
 
 #### S9. Unit tests on Windows
 
@@ -243,7 +245,7 @@ Done when: `tests/test_build.py` checks the new marker, and the S10 check finds 
   - The test checks shared behavior: build the expected value with the platform helpers.
   - Permission tests: Windows needs a deny ACL (`icacls /deny`), and the runner is administrator, so mark them skipped on Windows with that reason.
 - Add Windows-only tests for junctions and symlinks in the scan (S5), using a temporary folder on `C:`.
-- Identical-output guard: add `tests/dump_fixture.py`, which builds a small fixture, scans it, and prints the `tree` and `info` output with times, the temporary folder path and `gen` replaced by fixed values. A CI step on the Linux and macOS jobs runs it twice: once against the build of the commit before S2 (checked out with `git worktree add`), once against the current build, and fails on any difference. A saved file would not work, because root names and `st_blocks` differ between the two systems. Remove the step after M1.
+- Identical-output guard: add `tests/dump_fixture.py`, which builds a small fixture, scans it, and prints the `tree` and `info` output with times, the temporary folder path and `gen` replaced by fixed values. A CI step on the Linux and macOS jobs runs it twice: once against the build of the commit before S2, once against the current build, and fails on any difference. A saved file would not work, because root names and `st_blocks` differ between the two systems. The `tests` job checks out with depth 1, so the baseline commit is not present. Record its SHA as `BASELINE_SHA` in the workflow, then run `git fetch --depth=1 origin $BASELINE_SHA` and `git worktree add` it. Remove the step after M1.
 
 Done when: the unit tests pass on both Windows runners, with each skip giving a reason, and the baseline comparison passes on Linux and macOS.
 
@@ -251,7 +253,7 @@ Done when: the unit tests pass on both Windows runners, with each skip giving a 
 
 - Add `tests/windows_poc_check.py` (standard library only):
   1. Make a fixture folder on `C:` with a junction, a directory symlink to `\\diskmap-test.invalid\share`, a compressed file, a sparse file, a hard-linked pair and a name with a comma, an apostrophe and non-ASCII letters.
-  2. Start `python dist/diskmap.py --no-browser --no-cache` with the fixture folder pinned. Read the link from its output. Fetch the page with the launch key and read the token from its `var TOKEN = '...'` line.
+  2. Start `python -u dist/diskmap.py --no-browser --no-cache` with the fixture folder pinned (`-u`, because `main` prints the link without a flush and piped output is block-buffered). Read the link from its output, and fail if it does not appear within 60 seconds. Fetch the page with the launch key and read the token from its `var TOKEN = '...'` line.
   3. Scan the fixture, then `C:/`. Poll `/api/status` until both are done. Fail after 30 minutes.
   4. Assert: no HTTP 500. The fixture tree has the expected link tiles, sizes and names. `C:/` totals are within an agreed band of `disk_usage` used (start at 25%, tighten after the first runs, and print the number every run). `info` works for the junction, the symlink, `C:/Windows`, `C:/Users` and one big file. `/api/reveal` returns the expected error. The port test from S7 passes.
   5. Print scan time, file count and the totals gap as a summary table in the job log.
